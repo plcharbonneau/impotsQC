@@ -4,12 +4,11 @@ Calcul des déclarations de revenus **fédérale (T1)** et **du Québec (TP-1)**
 et de la **pension alimentaire pour enfants** selon le modèle québécois, pour un script ou un agent. On décrit un contribuable fictif et on obtient chaque ligne des
 formulaires et annexes : montant, numéro de ligne officiel, libellé, et la règle appliquée.
 
-> **Statut : 0.2.0 (alpha).** Le T1 et le TP-1 2025 et 2026 se calculent ligne par ligne, impôt
-> minimum de remplacement et crédit pour prolongation de carrière compris. Ils concordent avec un
-> calculateur externe sur 38 cas fictifs par année, à deux points d'interprétation près (voir
-> [PLAN.md](PLAN.md#points-dinterprétation)).
+> **Statut : 0.3.0 (alpha).** Le T1, le TP-1 et leurs annexes sont des documents distincts,
+> accessibles par `r.forms`. Cette version change l'API, pas les montants de 0.2.0. Les règles
+> fiscales et leurs limites sont conservées; voir [PLAN.md](PLAN.md#points-dinterprétation).
 
-## Portée de la version 0.1
+## Portée
 
 - Années : **2025 et 2026**, puis une année de plus chaque année. Les années publiées ne changent pas.
 - Situations : **salarié** (emploi, cotisations RRQ/AE/RQAP, déduction REER, placements) et
@@ -24,11 +23,51 @@ formulaires et annexes : montant, numéro de ligne officiel, libellé, et la rè
 from impotsqc import Taxpayer, compute
 
 r = compute(Taxpayer(year=2026, age=66, rrif_income=30_000, oas_pension=8_900))
-r.federal["23600"].amount      # revenu net (T1, ligne 23600)
-r.quebec["275"].amount         # revenu net (TP-1, ligne 275)
+r.forms["T1"]["23600"].amount           # revenu net fédéral
+r.forms["TP-1"]["275"].amount            # revenu net du Québec
+r.forms["TP-1.D.B"]["34"].amount        # résultat de l'annexe B
+r.forms["TP-1.D.B"].source              # URL du PDF officiel
+r.forms["TP-1"]["361"].refs             # ("TP-1.D.B:34",)
+r.forms["TP-1.D.B"]["22"].params        # paramètres d'âge consultés
 r.total_payable                # impôts fédéral et du Québec, cotisations comprises
 r.to_dict()                    # JSON, pour un agent
 ```
+
+`r.federal` et `r.quebec` restent des alias de `r.forms["T1"]` et `r.forms["TP-1"]`.
+Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée du moteur :
+
+| Code | Document | Condition de présence |
+| --- | --- | --- |
+| `T1`, `TP-1` | Déclarations principales | Toujours |
+| `TP-1.D.B` | Allègements fiscaux | Âge admissible, personne vivant seule ou revenu de retraite |
+| `TP-1.D.F` | Cotisation au FSS | Revenu assujetti au-dessus du premier seuil |
+| `TP-1.D.K` | Assurance médicaments | Revenu net au-dessus de l'exemption, assurance publique annuelle présumée |
+| `TP-752.PC` | Prolongation de carrière | 65 ans et plus et revenu de travail positif |
+| `T691` | IMR fédéral | Revenu imposable rajusté au-dessus de l'exemption |
+| `TP-776.42`, `TP-1.D.E` | IMR du Québec et redressement | Revenu imposable modifié au-dessus de l'exemption |
+
+La présence d'un formulaire ne signifie pas nécessairement un montant à payer ou un crédit positif.
+Seules les parties utiles à la situation et couvertes par le moteur sont remplies. Pour le T691,
+les clés distinguent les parties : `"P1-93"`, `"P5-11"`, `"P6-14"`; la partie 6 n'est remplie
+que si l'impôt minimum dépasse l'impôt ordinaire. Pour l'annexe B, les lignes 1, 8 et 9 désignent
+la grille de retraite. La dernière ligne de l'annexe K est `"98"` (cotisation personnelle : `"90"`).
+
+Chaque `Form` porte `code`, `title`, `version`, `source` et `lines`. Chaque `Line` porte son
+numéro, son libellé, son montant, sa règle, ses `refs` (`"CODE:ligne"`) et ses `params`
+(`"fichier.table.clé"`). Par exemple, `quebec.schedule_b.age` renvoie à
+`load_parameters(r.taxpayer.year)["quebec"]["schedule_b"]["age"]`; la même table contient
+`source`, `ref` et `status` pour retrouver la publication officielle.
+
+`r.to_dict()` contient `year`, `taxpayer`, `forms`, `summary` et `warnings`. Chaque entrée de
+`forms` contient les métadonnées du document et un dictionnaire `lines`; chaque ligne contient
+`label`, `amount`, `rule`, `refs` et `params`. Les montants sont arrondis au cent dans le JSON
+seulement. Les clés historiques `federal` et `quebec` restent disponibles pendant la version 0.3
+comme dictionnaires de lignes. Les anciennes clés préfixées sont déplacées dans leurs annexes :
+voir la [table de migration](CHANGELOG.md#030--2026-10-04).
+
+La numérotation et les versions des formulaires fiscaux sont celles de 2025. Pour l'année 2026,
+les métadonnées portent le statut `rule_2025`, avec les paramètres fiscaux de 2026; les PDF 2026
+ne sont pas encore utilisés.
 
 ### Pension alimentaire pour enfants
 
@@ -40,6 +79,8 @@ cas = ChildSupportCase(year=2026, parent_a=ParentIncome(salary=90_000), parent_b
 r = compute_child_support(cas)
 r.section, r.payer, r.annual_amount    # section de la partie 5, parent débiteur, pension annuelle
 r.form["401"].amount                   # contribution alimentaire parentale de base (table de l'année)
+r.form.code, r.form.version             # "FIXATION-PA", "2016-01"
+r.form.source                          # PDF officiel du formulaire de fixation
 ```
 
 Le module suit le Formulaire de fixation des pensions alimentaires pour enfants du Québec,
@@ -61,10 +102,11 @@ src/impotsqc/              le code (AGPL)
 src/impotsqc/parametres/   un dossier par année : paramètres en TOML, chacun avec sa source officielle
 oracle/AAAA/               relevés d'un oracle externe (local, ignoré par git; tests sautés en son absence)
 tests/
+benchmarks/compute.py      mesure de compute() avec timeit, cinq profils fictifs
 ```
 
 Les formules sont communes à toutes les années. Ce qui change d'une année à l'autre (taux,
-seuils, montants, plafonds) vit dans les TOML de l'année. Voir [PLAN.md](PLAN.md#années).
+seuils, montants, plafonds) vit dans les TOML de l'année. Les métadonnées des documents sont dans `formulaires.toml`. Voir [PLAN.md](PLAN.md#années).
 
 ## Sources
 

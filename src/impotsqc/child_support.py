@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 from .model import Form
-from .parameters import load_parameters
+from .parameters import available_years, load_parameters
 
 DAYS = 365
 EXCLUSIVE_MAX = 0.20   # droit de visite et de sortie de 20 % et moins : garde exclusive
@@ -115,7 +115,7 @@ class ChildSupportResult:
         """Résultat en JSON simple, pour un script ou un agent."""
         return {"year": self.case.year, "case": asdict(self.case), "section": self.section, "payer": self.payer,
                 "annual_amount": round(self.annual_amount, 2), "monthly_amount": round(self.monthly_amount, 2),
-                "form": self.form.to_dict(), "warnings": list(self.warnings)}
+                "form": {"code": self.form.code, **self.form.to_dict()}, "warnings": list(self.warnings)}
 
 
 def base_contribution(disposable_income: float, children: int, table: dict) -> tuple[float, bool]:
@@ -158,8 +158,11 @@ def _classify(days_a: tuple[int, ...]) -> list[tuple[str, str, float]]:
 
 def compute_child_support(case: ChildSupportCase, params: dict | None = None) -> ChildSupportResult:
     """Remplit le formulaire de fixation pour `case` avec les paramètres de son année (ou `params`)."""
-    p = (params or load_parameters(case.year))["pension_alimentaire"]
-    f = Form("Formulaire de fixation des pensions alimentaires pour enfants")
+    annual = params if params is not None else load_parameters(case.year)
+    p = annual["pension_alimentaire"]
+    # Compatibilité des tables injectées (exemples du guide) : le document 2016-01 est commun.
+    metadata = annual if "formulaires" in annual else load_parameters(available_years()[0])
+    f = Form.from_parameters("FIXATION-PA", metadata)
     warnings: list[str] = []
     parents = {"A": case.parent_a, "B": case.parent_b}
 
@@ -175,41 +178,73 @@ def compute_child_support(case: ChildSupportCase, params: dict | None = None) ->
     for x, inc in parents.items():
         for num, label, attr in lines:
             f.add(f"{num}.{x}", label, getattr(inc, attr))
-        total[x] = f.add(f"209.{x}", "TOTAL (lignes 200 à 208)", sum(getattr(inc, a) for _, _, a in lines))
+        total[x] = f.add(f"209.{x}", "TOTAL (lignes 200 à 208)", sum(getattr(inc, a) for _, _, a in lines),
+                         refs=(
+                             f"FIXATION-PA:200.{x}",
+                             f"FIXATION-PA:201.{x}",
+                             f"FIXATION-PA:202.{x}",
+                             f"FIXATION-PA:203.{x}",
+                             f"FIXATION-PA:204.{x}",
+                             f"FIXATION-PA:205.{x}",
+                             f"FIXATION-PA:206.{x}",
+                             f"FIXATION-PA:207.{x}",
+                             f"FIXATION-PA:208.{x}",
+                         ))
 
     # Partie 3 — revenu disponible
     for x, inc in parents.items():
-        f.add(f"300.{x}", "Revenu annuel (ligne 209)", total[x])
-        ded = f.add(f"301.{x}", "Déduction de base", p["basic_deduction"]["amount"], "selon la table de l'année")
+        f.add(f"300.{x}", "Revenu annuel (ligne 209)", total[x],
+              refs=(f"FIXATION-PA:209.{x}",))
+        ded = f.add(f"301.{x}", "Déduction de base", p["basic_deduction"]["amount"], "selon la table de l'année",
+                    params=("pension_alimentaire.basic_deduction.amount",))
         ded += f.add(f"302.{x}", "Déduction pour les cotisations syndicales", inc.union_dues)
         ded += f.add(f"303.{x}", "Déduction pour les cotisations professionnelles", inc.professional_dues)
-        f.add(f"304.{x}", "Total des déductions (lignes 301 à 303)", ded)
+        f.add(f"304.{x}", "Total des déductions (lignes 301 à 303)", ded,
+              refs=(f"FIXATION-PA:301.{x}", f"FIXATION-PA:302.{x}", f"FIXATION-PA:303.{x}"))
         disposable[x] = f.add(f"305.{x}", "Revenu disponible de chaque parent", max(0.0, total[x] - ded),
-                              "ligne 300 − ligne 304, 0 si négatif")
-    both = f.add("306", "Revenu disponible des deux parents", disposable["A"] + disposable["B"])
+                              "ligne 300 − ligne 304, 0 si négatif",
+                              refs=(f"FIXATION-PA:300.{x}", f"FIXATION-PA:304.{x}"))
+    both = f.add("306", "Revenu disponible des deux parents", disposable["A"] + disposable["B"],
+                 refs=("FIXATION-PA:305.A", "FIXATION-PA:305.B"))
     factor = {x: (disposable[x] / both if both > 0 else 0.5) for x in parents}
     for x in parents:
-        f.add(f"307.{x}", "Facteur de répartition des revenus", factor[x], "ligne 305 / ligne 306 (fraction)")
+        f.add(f"307.{x}", "Facteur de répartition des revenus", factor[x], "ligne 305 / ligne 306 (fraction)",
+              refs=(f"FIXATION-PA:305.{x}", "FIXATION-PA:306"))
 
     # Partie 4 — contribution alimentaire annuelle
     n = f.add("400", "Nombre d'enfants communs aux parents concernés par la demande", len(case.custody_days_a))
     n = int(n)
     base, above = base_contribution(both, n, p["base_contribution_table"])
     f.add("401", "Contribution alimentaire parentale de base", base,
-          "table de l'année selon la ligne 306 et le nombre d'enfants")
+          "table de l'année selon la ligne 306 et le nombre d'enfants",
+          refs=("FIXATION-PA:306", "FIXATION-PA:400"),
+          params=(
+              "pension_alimentaire.base_contribution_table.upper_bounds",
+              "pension_alimentaire.base_contribution_table.amounts_1_child",
+              "pension_alimentaire.base_contribution_table.amounts_2_children",
+              "pension_alimentaire.base_contribution_table.amounts_3_children",
+              "pension_alimentaire.base_contribution_table.amounts_4_children",
+              "pension_alimentaire.base_contribution_table.amounts_5_children",
+              "pension_alimentaire.base_contribution_table.amounts_6_children",
+              "pension_alimentaire.base_contribution_table.excess_over",
+              "pension_alimentaire.base_contribution_table.excess_rates_by_children",
+          ))
     if above:
         warnings.append("Revenu disponible des parents au-delà de 200 000 $ : le pourcentage de l'excédent "
                         "n'est qu'indicatif, le tribunal peut fixer un autre montant (art. 10 du Règlement).")
     if n > 6:
         warnings.append("Plus de 6 enfants : montant extrapolé selon la note (1) de la table.")
     contrib = {x: f.add(f"402.{x}", "Contribution alimentaire parentale de base de chacun des parents",
-                        base * factor[x], "ligne 401 × ligne 307") for x in parents}
+                        base * factor[x], "ligne 401 × ligne 307",
+                        refs=("FIXATION-PA:401", f"FIXATION-PA:307.{x}")) for x in parents}
     frais = f.add("403", "Frais de garde nets", case.childcare)
     frais += f.add("404", "Frais d'études postsecondaires nets", case.post_secondary)
     frais += f.add("405", "Frais particuliers nets", case.special_expenses)
-    f.add("406", "Total des frais (lignes 403 à 405)", frais)
+    f.add("406", "Total des frais (lignes 403 à 405)", frais,
+          refs=("FIXATION-PA:403", "FIXATION-PA:404", "FIXATION-PA:405"))
     frais_share = {x: f.add(f"407.{x}", "Contribution de chacun des parents aux frais", frais * factor[x],
-                            "ligne 406 × ligne 307") for x in parents}
+                            "ligne 406 × ligne 307",
+                            refs=("FIXATION-PA:406", f"FIXATION-PA:307.{x}")) for x in parents}
 
     # Partie 5 — pension selon le temps de garde
     kinds = _classify(case.custody_days_a)
@@ -219,11 +254,16 @@ def compute_child_support(case: ChildSupportCase, params: dict | None = None) ->
     # Partie 6 — capacité de payer du débiteur
     amount = 0.0
     if payer is not None:
-        f.add("600", "Revenu disponible du parent devant payer la pension alimentaire", disposable[payer])
-        cap = f.add("601", "Ligne 600 multipliée par 50 %", 0.5 * disposable[payer])
-        due = f.add("602", "Pension alimentaire annuelle à payer selon la partie 5", payable[payer])
+        final_line = {"1": "512", "1.1": "518", "2": "526", "3": "534", "4": "564"}[section]
+        f.add("600", "Revenu disponible du parent devant payer la pension alimentaire", disposable[payer],
+              refs=(f"FIXATION-PA:305.{payer}",))
+        cap = f.add("601", "Ligne 600 multipliée par 50 %", 0.5 * disposable[payer],
+                    refs=("FIXATION-PA:600",))
+        due = f.add("602", "Pension alimentaire annuelle à payer selon la partie 5", payable[payer],
+                    refs=(f"FIXATION-PA:{final_line}.{payer}",))
         amount = f.add("603", "Pension alimentaire annuelle à payer", min(cap, due),
-                       "le moins élevé des lignes 601 et 602")
+                       "le moins élevé des lignes 601 et 602",
+                       refs=("FIXATION-PA:601", "FIXATION-PA:602"))
         if cap < due:
             warnings.append("Capacité de payer : la pension est plafonnée à 50 % du revenu disponible du débiteur.")
     return ChildSupportResult(case, f, section, payer, amount, tuple(warnings))
@@ -238,34 +278,45 @@ def _part5(f: Form, kinds, base, frais, n, factor, contrib, frais_share):
 
     if types == {"exclusive"} and len(custodians) == 1:                      # Section 1
         non = other[custodians.pop()]
-        total = f.add("511", "Contribution alimentaire annuelle des deux parents", base + frais, "ligne 401 + ligne 406")
+        total = f.add("511", "Contribution alimentaire annuelle des deux parents", base + frais, "ligne 401 + ligne 406",
+                      refs=("FIXATION-PA:401", "FIXATION-PA:406"))
         payable[non] = f.add(f"512.{non}", "Pension alimentaire annuelle à payer par le parent non gardien",
-                             total * factor[non], "ligne 511 × ligne 307")
+                             total * factor[non], "ligne 511 × ligne 307",
+                             refs=("FIXATION-PA:511", f"FIXATION-PA:307.{non}"))
         return "1", payable
 
     shares = {round(s, 9) for k, _, s in kinds if k == "extended"}
     if types == {"extended"} and len(custodians) == 1 and len(shares) == 1:  # Section 1.1
         non, pct = other[custodians.pop()], shares.pop()
-        total = f.add("514", "Contribution alimentaire annuelle des deux parents", base + frais, "ligne 401 + ligne 406")
+        total = f.add("514", "Contribution alimentaire annuelle des deux parents", base + frais, "ligne 401 + ligne 406",
+                      refs=("FIXATION-PA:401", "FIXATION-PA:406"))
         f.add("515", "Pourcentage du temps de garde pour l'exercice du droit de visite et de sortie prolongé", pct)
         comp = f.add("516", "Compensation pour droit de visite et de sortie prolongé", (pct - EXCLUSIVE_MAX) * base,
-                     "(ligne 515 − 20 %) × ligne 401")
-        adjusted = f.add("517", "Contribution alimentaire annuelle ajustée des deux parents", total - comp)
+                     "(ligne 515 − 20 %) × ligne 401",
+                     refs=("FIXATION-PA:515", "FIXATION-PA:401"))
+        adjusted = f.add("517", "Contribution alimentaire annuelle ajustée des deux parents", total - comp,
+                         refs=("FIXATION-PA:514", "FIXATION-PA:516"))
         payable[non] = f.add(f"518.{non}", "Pension alimentaire annuelle à payer par le parent non gardien",
-                             adjusted * factor[non], "ligne 517 × ligne 307")
+                             adjusted * factor[non], "ligne 517 × ligne 307",
+                             refs=("FIXATION-PA:517", f"FIXATION-PA:307.{non}"))
         return "1.1", payable
 
     if types == {"exclusive"}:                                                # Section 2
         count = {x: sum(1 for k, c, _ in kinds if c == x) for x in ("A", "B")}
         f.add("520", "Nombre d'enfants sous la garde du parent A", count["A"])
         f.add("521", "Nombre d'enfants sous la garde du parent B", count["B"])
-        cost = f.add("523", "Coût moyen par enfant", base / n, "ligne 401 / ligne 400")
+        cost = f.add("523", "Coût moyen par enfant", base / n, "ligne 401 / ligne 400",
+                     refs=("FIXATION-PA:401", "FIXATION-PA:400"))
         for x in ("A", "B"):
-            f.add(f"522.{x}", "Contribution alimentaire parentale de base de chacun des parents", contrib[x])
-            own = f.add(f"524.{x}", "Coût de la garde pour chaque parent", cost * count[x])
-            net = f.add(f"525.{x}", "Pension alimentaire annuelle de base", max(0.0, contrib[x] - own))
+            f.add(f"522.{x}", "Contribution alimentaire parentale de base de chacun des parents", contrib[x],
+                  refs=(f"FIXATION-PA:402.{x}",))
+            own = f.add(f"524.{x}", "Coût de la garde pour chaque parent", cost * count[x],
+                        refs=("FIXATION-PA:523", f"FIXATION-PA:{'520' if x == 'A' else '521'}"))
+            net = f.add(f"525.{x}", "Pension alimentaire annuelle de base", max(0.0, contrib[x] - own),
+                        refs=(f"FIXATION-PA:522.{x}", f"FIXATION-PA:524.{x}"))
             payable[x] = f.add(f"526.{x}", "Pension alimentaire annuelle à payer",
-                               net + frais_share[x] if net > 0 else 0.0, "ligne 525 + ligne 407, 0 si 525 = 0")
+                               net + frais_share[x] if net > 0 else 0.0, "ligne 525 + ligne 407, 0 si 525 = 0",
+                               refs=(f"FIXATION-PA:525.{x}", f"FIXATION-PA:407.{x}"))
         return "2", payable
 
     splits = {round(s, 9) for k, _, s in kinds if k == "shared"}
@@ -274,11 +325,15 @@ def _part5(f: Form, kinds, base, frais, n, factor, contrib, frais_share):
         split = {"A": share_a, "B": 1 - share_a}
         for x in ("A", "B"):
             f.add(f"530.{x}", "Facteur de répartition de la garde", split[x], "jours de garde / 365")
-            f.add(f"531.{x}", "Contribution alimentaire parentale de base de chacun des parents", contrib[x])
-            own = f.add(f"532.{x}", "Coût de la garde pour chaque parent", base * split[x], "ligne 401 × ligne 530")
-            net = f.add(f"533.{x}", "Pension alimentaire annuelle de base", max(0.0, contrib[x] - own))
+            f.add(f"531.{x}", "Contribution alimentaire parentale de base de chacun des parents", contrib[x],
+                  refs=(f"FIXATION-PA:402.{x}",))
+            own = f.add(f"532.{x}", "Coût de la garde pour chaque parent", base * split[x], "ligne 401 × ligne 530",
+                        refs=("FIXATION-PA:401", f"FIXATION-PA:530.{x}"))
+            net = f.add(f"533.{x}", "Pension alimentaire annuelle de base", max(0.0, contrib[x] - own),
+                        refs=(f"FIXATION-PA:531.{x}", f"FIXATION-PA:532.{x}"))
             payable[x] = f.add(f"534.{x}", "Pension alimentaire annuelle à payer",
-                               net + frais_share[x] if net > 0 else 0.0, "ligne 533 + ligne 407, 0 si 533 = 0")
+                               net + frais_share[x] if net > 0 else 0.0, "ligne 533 + ligne 407, 0 si 533 = 0",
+                               refs=(f"FIXATION-PA:533.{x}", f"FIXATION-PA:407.{x}"))
         return "3", payable
 
     return "4", _section4(f, kinds, base, n, factor, frais_share, payable)
@@ -292,52 +347,79 @@ def _section4(f: Form, kinds, base, n, factor, frais_share, payable):
     if any(len(v) > 1 for v in ext.values()) or len(splits) > 1:
         raise ValueError("section 4 : le formulaire n'admet qu'un pourcentage de droit de visite prolongé par "
                          "parent et un seul partage pour les enfants en garde partagée")
-    cost = f.add("540", "Coût moyen par enfant", base / n, "ligne 401 / ligne 400")
+    cost = f.add("540", "Coût moyen par enfant", base / n, "ligne 401 / ligne 400",
+                 refs=("FIXATION-PA:401", "FIXATION-PA:400"))
     gap_excl, gap_ext, cost_ext, total = {}, {}, {}, {}
     for x in ("A", "B"):
         n_excl = f.add(f"541.{x}", "Nombre d'enfants concernés par la garde exclusive",
                        sum(1 for k, c, _ in kinds if k == "exclusive" and c == x))
-        own = f.add(f"542.{x}", "Coût de la garde des enfants concernés par la garde exclusive", cost * n_excl)
-        mine = f.add(f"543.{x}", "Contribution alimentaire de base du parent gardien", own * factor[x])
-        gap_excl[x] = f.add(f"544.{x}", "Écart entre le coût de la garde et la contribution du parent gardien", own - mine)
+        own = f.add(f"542.{x}", "Coût de la garde des enfants concernés par la garde exclusive", cost * n_excl,
+                    refs=("FIXATION-PA:540", f"FIXATION-PA:541.{x}"))
+        mine = f.add(f"543.{x}", "Contribution alimentaire de base du parent gardien", own * factor[x],
+                     refs=(f"FIXATION-PA:542.{x}", f"FIXATION-PA:307.{x}"))
+        gap_excl[x] = f.add(f"544.{x}", "Écart entre le coût de la garde et la contribution du parent gardien", own - mine,
+                            refs=(f"FIXATION-PA:542.{x}", f"FIXATION-PA:543.{x}"))
     for x in ("A", "B"):
         f.add(f"545.{x}", "Pension alimentaire annuelle de base pour les enfants en garde exclusive",
-              max(0.0, gap_excl[other[x]] - gap_excl[x]))
+              max(0.0, gap_excl[other[x]] - gap_excl[x]),
+              refs=(f"FIXATION-PA:544.{other[x]}", f"FIXATION-PA:544.{x}"))
     for x in ("A", "B"):
         n_ext = f.add(f"546.{x}", "Nombre d'enfants concernés par la garde avec droit de visite et de sortie prolongé",
                       sum(1 for k, c, _ in kinds if k == "extended" and c == x))
-        cost_ext[x] = f.add(f"547.{x}", "Coût de la garde des enfants concernés par la garde prolongée", cost * n_ext)
+        cost_ext[x] = f.add(f"547.{x}", "Coût de la garde des enfants concernés par la garde prolongée", cost * n_ext,
+                            refs=("FIXATION-PA:540", f"FIXATION-PA:546.{x}"))
     for x in ("A", "B"):  # x exerce le droit prolongé sur les enfants gardés par l'autre parent
         pct = next(iter(ext[x]), EXCLUSIVE_MAX)
         f.add(f"548.{x}", "Pourcentage du temps de garde pour l'exercice du droit de visite et de sortie prolongé", pct)
         f.add(f"549.{x}", "Compensation pour droit de visite et de sortie prolongé",
-              (pct - EXCLUSIVE_MAX) * cost_ext[other[x]], "(ligne 548 − 20 %) × ligne 547 de l'autre parent")
+              (pct - EXCLUSIVE_MAX) * cost_ext[other[x]], "(ligne 548 − 20 %) × ligne 547 de l'autre parent",
+              refs=(f"FIXATION-PA:548.{x}", f"FIXATION-PA:547.{other[x]}"))
     for x in ("A", "B"):
         adjusted = f.add(f"550.{x}", "Coût de la garde des enfants concernés par la garde prolongée ajustée",
-                         cost_ext[x] - f.amount(f"549.{other[x]}"))
-        mine = f.add(f"551.{x}", "Contribution alimentaire annuelle de base du parent gardien", adjusted * factor[x])
+                         cost_ext[x] - f.amount(f"549.{other[x]}"),
+                         refs=(f"FIXATION-PA:547.{x}", f"FIXATION-PA:549.{other[x]}"))
+        mine = f.add(f"551.{x}", "Contribution alimentaire annuelle de base du parent gardien", adjusted * factor[x],
+                     refs=(f"FIXATION-PA:550.{x}", f"FIXATION-PA:307.{x}"))
         gap_ext[x] = f.add(f"552.{x}", "Écart entre le coût de la garde et la contribution alimentaire de base",
-                           adjusted - mine)
+                           adjusted - mine,
+                           refs=(f"FIXATION-PA:550.{x}", f"FIXATION-PA:551.{x}"))
     for x in ("A", "B"):
         f.add(f"553.{x}", "Pension alimentaire annuelle à payer pour la garde avec droit de visite et de sortie prolongé",
-              max(0.0, gap_ext[other[x]] - gap_ext[x]))
+              max(0.0, gap_ext[other[x]] - gap_ext[x]),
+              refs=(f"FIXATION-PA:552.{other[x]}", f"FIXATION-PA:552.{x}"))
     n_shared = f.add("554", "Nombre d'enfants concernés par la garde partagée",
                      sum(1 for k, _, _ in kinds if k == "shared"))
-    shared_cost = f.add("555", "Coût de la garde des enfants concernés par la garde partagée", cost * n_shared)
+    shared_cost = f.add("555", "Coût de la garde des enfants concernés par la garde partagée", cost * n_shared,
+                        refs=("FIXATION-PA:540", "FIXATION-PA:554"))
     share_a = next(iter(splits), 0.5)
     split = {"A": share_a, "B": 1 - share_a}
     for x in ("A", "B"):
         f.add(f"556.{x}", "Facteur de répartition de la garde partagée", split[x])
         mine = f.add(f"557.{x}", "Contribution alimentaire parentale de base pour les enfants en garde partagée",
-                     shared_cost * factor[x])
-        own = f.add(f"558.{x}", "Coût de la garde partagée pour chaque parent", shared_cost * split[x])
-        f.add(f"559.{x}", "Pension alimentaire annuelle de base pour les enfants en garde partagée", max(0.0, mine - own))
+                     shared_cost * factor[x],
+                     refs=("FIXATION-PA:555", f"FIXATION-PA:307.{x}"))
+        own = f.add(f"558.{x}", "Coût de la garde partagée pour chaque parent", shared_cost * split[x],
+                    refs=("FIXATION-PA:555", f"FIXATION-PA:556.{x}"))
+        f.add(f"559.{x}", "Pension alimentaire annuelle de base pour les enfants en garde partagée", max(0.0, mine - own),
+              refs=(f"FIXATION-PA:557.{x}", f"FIXATION-PA:558.{x}"))
     for x in ("A", "B"):
-        total[x] = (f.add(f"560.{x}", "Pension de base, enfants en garde exclusive", f.amount(f"545.{x}"))
-                    + f.add(f"561.{x}", "Pension, garde avec droit de visite et de sortie prolongé", f.amount(f"553.{x}"))
-                    + f.add(f"562.{x}", "Pension de base, enfants en garde partagée", f.amount(f"559.{x}")))
+        total[x] = (f.add(f"560.{x}", "Pension de base, enfants en garde exclusive", f.amount(f"545.{x}"),
+                          refs=(f"FIXATION-PA:545.{x}",))
+                    + f.add(f"561.{x}", "Pension, garde avec droit de visite et de sortie prolongé", f.amount(f"553.{x}"),
+                            refs=(f"FIXATION-PA:553.{x}",))
+                    + f.add(f"562.{x}", "Pension de base, enfants en garde partagée", f.amount(f"559.{x}"),
+                            refs=(f"FIXATION-PA:559.{x}",)))
     for x in ("A", "B"):
-        net = f.add(f"563.{x}", "Pension alimentaire annuelle de base totale", max(0.0, total[x] - total[other[x]]))
+        net = f.add(f"563.{x}", "Pension alimentaire annuelle de base totale", max(0.0, total[x] - total[other[x]]),
+                    refs=(
+                        f"FIXATION-PA:560.{x}",
+                        f"FIXATION-PA:561.{x}",
+                        f"FIXATION-PA:562.{x}",
+                        f"FIXATION-PA:560.{other[x]}",
+                        f"FIXATION-PA:561.{other[x]}",
+                        f"FIXATION-PA:562.{other[x]}",
+                    ))
         payable[x] = f.add(f"564.{x}", "Pension alimentaire à payer", net + frais_share[x] if net > 0 else 0.0,
-                           "ligne 563 + ligne 407, 0 si 563 = 0")
+                           "ligne 563 + ligne 407, 0 si 563 = 0",
+                           refs=(f"FIXATION-PA:563.{x}", f"FIXATION-PA:407.{x}"))
     return payable

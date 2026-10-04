@@ -1,6 +1,6 @@
 [project]
 name = "impotsqc"
-version = "0.2.0"
+version = "0.3.0"
 description = "Déclarations de revenus fédérale (T1) et du Québec (TP-1), ligne par ligne, pour scripts et agents."
 readme = "README.md"
 requires-python = ">=3.11"

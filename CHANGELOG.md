@@ -4,6 +4,42 @@ Versions selon SemVer. Une entrée **« change les résultats »** signale toute
 déplace un montant calculé pour une année déjà publiée; elle cite la source officielle qui la
 justifie.
 
+## 0.3.0 — 2026-10-04
+
+**Change l'API, pas les montants.** Aucun fichier de paramètres fiscaux déjà publié n'est modifié.
+
+- `TaxReturn.forms` regroupe les déclarations et les annexes par code officiel. Chaque annexe
+  est calculée par une fonction distincte; les documents non applicables ne sont pas construits.
+  `federal` et `quebec` restent des alias vers les mêmes objets `T1` et `TP-1`.
+- `Form` expose `code`, `title`, `version`, `source` et `lines`. Les métadonnées proviennent des
+  nouveaux `parametres/AAAA/formulaires.toml`, validés au chargement. Les formulaires fiscaux
+  2026 utilisent la numérotation des PDF 2025 (`rule_2025`).
+- `Line.refs` décrit les dépendances entre lignes; `Line.params` identifie les paramètres et
+  leurs sources. `Line` reste immuable et devient un `NamedTuple` pour limiter le coût de
+  construction des annexes; les quatre arguments historiques restent valides.
+- `TaxReturn.to_dict()` ajoute `forms` avec métadonnées et lignes. Les clés `federal` et `quebec`
+  sont conservées **pendant la version 0.3**, sous leur forme de dictionnaires de lignes.
+  `Form.to_dict()` rend désormais les métadonnées et `lines` au lieu des seules lignes.
+  `Form(code=...)` remplace `Form(name=...)`; `name` reste un alias en lecture de `code`.
+- `ChildSupportResult.form` utilise le code `FIXATION-PA` et le document officiel version
+  `2016-01`. Son JSON inclut le code, les métadonnées et `lines`.
+- Validation : tests existants conservés (seuls les accès aux anciennes clés ci-dessous sont
+  adaptés), tests de provenance et de références, reports des annexes, JSON, applicabilité,
+  et comparaison exacte de 2 005 déclarations fictives avec 0.2.0. Mesures dans `PLAN.md`.
+
+| Ancien accès | Nouvel accès |
+| --- | --- |
+| `r.federal["T691:93"]` | `r.forms["T691"]["P1-93"]` |
+| `r.federal["T691:95"]` | `r.forms["T691"]["P1-95"]` |
+| `r.federal["T691:103"]` | `r.forms["T691"]["P1-103"]` |
+| `r.quebec["E:15"]` | `r.forms["TP-1.D.E"]["15"]` |
+| `r.quebec["TP-776.42:rajuste"]` | `r.forms["TP-776.42"]["22"]` |
+
+Les lignes du TP-1 361, 446, 447 et 391 conservent leurs montants et référencent respectivement
+les lignes B:34, F:82, K:98 et TP-752.PC:50. Les sources officielles des numéros et des titres
+sont les PDF cités dans les catalogues annuels. Cette refonte préserve les règles fiscales de
+0.2.0, y compris leurs limites; elle ne constitue pas une correction fiscale.
+
 ## 0.2.0 — 2026-10-04
 
 - **Pension alimentaire pour enfants** (`compute_child_support`) : Formulaire de fixation des

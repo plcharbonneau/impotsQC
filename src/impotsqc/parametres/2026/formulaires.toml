@@ -1,0 +1,72 @@
+# Métadonnées des formulaires utilisés pour 2026. Aucun paramètre fiscal dans ce fichier.
+# Numérotation fiscale 2025 conservée tant que les formulaires 2026 ne sont pas publiés.
+
+["T1"]
+title = "Déclaration de revenus et de prestations"
+version = "2025"
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-r/5005-r-25f.pdf"
+ref = "T1, formulaire 5005-R F (25), résident du Québec"
+status = "rule_2025"
+
+["T691"]
+title = "Impôt minimum de remplacement"
+version = "2025"
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t691/t691-25f.pdf"
+ref = "T691 F (25), parties 1, 5 et 6; clés préfixées par la partie"
+status = "rule_2025"
+
+["TP-1"]
+title = "Déclaration de revenus"
+version = "2025-12"
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D%282025-12%29.pdf"
+ref = "TP-1.D (2025-12)"
+status = "rule_2025"
+
+["TP-1.D.B"]
+title = "Allègements fiscaux"
+version = "2025-12"
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf"
+ref = "Annexe B, parties A et B, grille de calcul du montant pour revenus de retraite"
+status = "rule_2025"
+
+["TP-1.D.E"]
+title = "Redressements et crédits d’impôt"
+version = "2025-12"
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.E%282025-12%29.pdf"
+ref = "Annexe E, partie B, lignes 10 à 18"
+status = "rule_2025"
+
+["TP-1.D.F"]
+title = "Cotisation au Fonds des services de santé (FSS)"
+version = "2025-12"
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.F%282025-12%29.pdf"
+ref = "Annexe F, parties A et B, lignes 10 à 82"
+status = "rule_2025"
+
+["TP-1.D.K"]
+title = "Cotisation au régime d’assurance médicaments du Québec"
+version = "2025-12"
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.K%282025-12%29.pdf"
+ref = "Annexe K, particulier sans conjoint, colonne A ou B; ligne finale 98"
+status = "rule_2025"
+
+["TP-752.PC"]
+title = "Crédit d’impôt pour prolongation de carrière"
+version = "2025-10"
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-752.PC%282025-10%29.pdf"
+ref = "TP-752.PC, partie 2, lignes 10 à 50"
+status = "rule_2025"
+
+["TP-776.42"]
+title = "Impôt minimum de remplacement"
+version = "2025-10"
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-776.42%282025-10%29.pdf"
+ref = "TP-776.42, partie 1 et grilles 4, 5 et 7; revenu imposable modifié à la ligne 22"
+status = "rule_2025"
+
+["FIXATION-PA"]
+title = "Formulaire de fixation des pensions alimentaires pour enfants"
+version = "2016-01"
+source = "https://cdn-contenu.quebec.ca/cdn-contenu/justice/formulaires/couple-famille/FORM_Fix_PA.pdf"
+ref = "Annexe I du Règlement sur la fixation des pensions alimentaires pour enfants; version imprimée 2016-01, colonnes A et B pour les parents"
+status = "published"

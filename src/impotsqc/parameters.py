@@ -3,7 +3,7 @@
 """Chargement et vérification des paramètres annuels (un dossier TOML par année).
 
 Chaque année vit dans `impotsqc/parametres/AAAA/` : `federal.toml`, `quebec.toml`,
-`cotisations.toml`. Chaque table y porte une source officielle (`source`), l'endroit où lire la
+`cotisations.toml`, `pension_alimentaire.toml` et `formulaires.toml`. Chaque table y porte une source officielle (`source`), l'endroit où lire la
 valeur (`ref`) et un statut (`status`). Les statuts `unpublished` et `incomplete` marquent des
 valeurs provisoires ou des règles pas encore calculables; `provisional()` les énumère pour que
 les résultats puissent le signaler.
@@ -14,7 +14,9 @@ from __future__ import annotations
 import tomllib
 from importlib.resources import files
 
-FILES = ("federal", "quebec", "cotisations", "pension_alimentaire")
+FILES = ("federal", "quebec", "cotisations", "pension_alimentaire", "formulaires")
+FORM_CODES = frozenset({"T1", "T691", "TP-1", "TP-1.D.B", "TP-1.D.E", "TP-1.D.F", "TP-1.D.K",
+                        "TP-752.PC", "TP-776.42", "FIXATION-PA"})
 STATUSES = frozenset({"published", "rule_2025", "derived", "unpublished", "incomplete"})
 PROVISIONAL_STATUSES = frozenset({"unpublished", "incomplete"})
 _METADATA = ("source", "ref", "status")
@@ -35,7 +37,7 @@ def available_years() -> list[int]:
 
 
 def load_parameters(year: int) -> dict[str, dict[str, dict]]:
-    """Paramètres de `year`, vérifiés : `{"federal": {...}, "quebec": {...}, "cotisations": {...}}`.
+    """Paramètres fiscaux et catalogue de formulaires de `year`, vérifiés par fichier et table.
 
     Rend un dictionnaire neuf à chaque appel : le modifier n'altère pas les fichiers.
     """
@@ -46,7 +48,21 @@ def load_parameters(year: int) -> dict[str, dict[str, dict]]:
     for name, tables in params.items():
         for key, table in tables.items():
             _check_table(f"{year}/{name}.{key}", table)
+    _check_forms(params["formulaires"])
     return params
+
+
+def _check_forms(forms: dict) -> None:
+    """Vérifie la présence des formulaires et les métadonnées propres aux documents."""
+    missing = FORM_CODES - forms.keys()
+    if missing:
+        raise ParameterError(f"formulaires manquants : {sorted(missing)}")
+    for code, table in forms.items():
+        for key in ("title", "version"):
+            if not isinstance(table.get(key), str) or not table[key].strip():
+                raise ParameterError(f"formulaires.{code} : {key} doit être une chaîne non vide")
+        if not table["source"].lower().endswith(".pdf"):
+            raise ParameterError(f"formulaires.{code} : la source doit désigner un PDF officiel")
 
 
 def provisional(params: dict[str, dict[str, dict]]) -> list[str]:

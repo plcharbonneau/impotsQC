@@ -1,0 +1,98 @@
+# Paramètres du Québec 2025 (TP-1). Conventions : voir parametres/2026/federal.toml.
+# Sources : TP-1.D (2025-12) et ses annexes, qui impriment les montants de l'année, et la colonne
+# 2025 du Tableau 3 de Finances Québec.
+
+[brackets]
+thresholds = [53_255, 106_495, 129_590]
+rates = [0.14, 0.19, 0.24, 0.2575]
+source = "https://cdn-contenu.quebec.ca/cdn-contenu/adm/min/finances/publications-adm/parametres/AUTFR_RegimeImpot2026.pdf"
+ref = "Tableau 3, colonne 2025 : seuils des trois premières tranches; taux inchangés"
+status = "published"
+
+[credits]
+rate = 0.14
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D%282025-12%29.pdf"
+ref = "Ligne 377.1 : montant de la ligne 377 multiplié par 14 %"
+status = "published"
+
+[basic_personal_amount]
+amount = 18_571
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D%282025-12%29.pdf"
+ref = "Ligne 350 : montant personnel de base imprimé (18 571 $)"
+status = "published"
+
+[schedule_b]
+living_alone = 2_128
+single_parent_supplement = 2_627
+age = 3_906
+minimum_age = 65
+retirement_income_maximum = 3_470
+retirement_income_factor = 1.25
+reduction_threshold = 42_090
+reduction_rate = 0.1875
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf"
+ref = "Annexe B 2025 : 2 128 $ (ligne 20), 3 906 $ (ligne 22), × 1,25 maximum 3 470 $ (grille, ligne 9), seuil de 42 090 $ (ligne 16), 18,75 % (ligne 31); supplément monoparental : Tableau 3"
+status = "published"
+
+[workers_deduction]
+rate = 0.06
+maximum = 1_420
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.G%282025-12%29.pdf"
+ref = "Guide 2025, ligne 201 : 6 % du revenu de travail; maximum de 1 420 $ (Tableau 3)"
+status = "published"
+
+[dividends]
+eligible_gross_up = 0.38
+other_gross_up = 0.15
+eligible_credit_rate = 0.117
+other_credit_rate = 0.0342
+source = "https://www.budget.finances.gouv.qc.ca/budget/outils/depenses-fiscales/fiches/fiche-130501.asp"
+ref = "Fiche 130501 : 11,7 % (déterminés) et 3,42 % (ordinaires) du montant majoré. Ligne 415"
+status = "published"
+
+[career_extension]
+# Ligne 391, formulaire TP-752.PC : 14 % du revenu de travail admissible au-delà de l'exclusion
+# (plafonné), réduit de 7 % du revenu net (ligne 275) au-delà du seuil. 65 ans et plus depuis 2025.
+minimum_age = 65
+excluded_income = 7_500
+maximum_eligible_income = 12_500
+credit_rate = 0.14
+reduction_threshold = 56_500
+reduction_rate = 0.07
+source = "https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-391/"
+ref = "Revenu Québec, ligne 391 et crédit pour prolongation de carrière (2025) : rien si le revenu de travail admissible est de 7 500 $ ou moins, crédit maximal de 1 750 $ (14 % × 12 500 $), réduit de 7 % du revenu net au-delà de 56 500 $, nul à 81 500 $. Montants 2025 : Tableau 3 de Finances Québec"
+status = "published"
+
+[minimum_tax]
+# Annexe E, partie B, et formulaire TP-776.42 : le plus élevé de l'impôt ordinaire (ligne 430) et de
+# l'impôt minimum. Paramètres « similaires » au fédéral (bulletin 2023-4) : gains en capital à 100 %,
+# dividendes au montant réel, 50 % des déductions visées rajoutées, 50 % des crédits non remboursables.
+rate = 0.19
+exemption = 179_990
+capital_gains_inclusion = 1.0
+deduction_addback_rate = 0.5
+credit_fraction = 0.5
+source = "https://cffp.recherche.usherbrooke.ca/outils-ressources/guide-mesures-fiscales/impot-minimum-remplacement/"
+ref = "Taux de 19 % et exemption : bulletin d'information 2023-4 et Tableau 3 de Finances Québec (2025). Calcul [19 % × (revenu imposable rajusté − exemption)] − 50 % des crédits non remboursables : Chaire en fiscalité et en finances publiques (Université de Sherbrooke). Le formulaire TP-776.42 n'a pas pu être lu (accès refusé)"
+status = "derived"
+
+[health_services_fund]
+first_threshold = 18_130
+second_threshold = 63_060
+rate = 0.01
+first_maximum = 150
+maximum = 1_000
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.F%282025-12%29.pdf"
+ref = "Annexe F 2025, partie B : seuils de 18 130 $ et 63 060 $, 1 %, maximums de 150 $ et 1 000 $"
+status = "published"
+
+[drug_insurance]
+rate_cap = 766
+annual_maximum = 755
+exemption_single = 19_890
+first_bracket_width = 5_000
+first_rate_single = 0.0784
+second_rate_single = 0.1176
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.K%282025-12%29.pdf"
+ref = "Annexe K 2025 : exemption de 19 890 $ (ligne 40), 7,84 % puis 11,76 % (ligne 80), maximum de 766 $ (ligne 83), cotisation maximale pour l'année de 755 $ (ligne 87)"
+status = "published"

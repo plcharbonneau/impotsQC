@@ -1,0 +1,91 @@
+# Paramètres fédéraux 2025 (T1, résident du Québec). Conventions : voir parametres/2026/federal.toml.
+# Source principale : le formulaire 5005-R F (25), qui imprime seuils, taux et maximums de l'année.
+
+[brackets]
+thresholds = [57_375, 114_750, 177_882, 253_414]
+rates = [0.145, 0.205, 0.26, 0.29, 0.33]
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-r/5005-r-25f.pdf"
+ref = "Étape 5, partie A : seuils et taux de 14,5 % (taux annuel mixte : 15 % jusqu'au 30 juin, 14 % ensuite), 20,5 %, 26 %, 29 %, 33 %"
+status = "published"
+
+[credits]
+rate = 0.145
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-r/5005-r-25f.pdf"
+ref = "Ligne 118 : taux fédéral des crédits d'impôt non remboursables × 14,5 %"
+status = "published"
+
+[top_up_credit]
+amounts_threshold = 57_375
+rate = 0.0050025
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25e.pdf"
+ref = "Feuille 5000-D1 2025, ligne 34990 : (ligne 33800 − 8 319,38 $) × 3,45 %, soit exactement 14,5 % × 3,45 % = 0,50025 % des montants au-delà de 57 375 $ (dons de l'annexe 9 hors portée)"
+status = "derived"
+
+[basic_personal_amount]
+maximum = 16_129
+minimum = 14_538
+phase_out_start = 177_882
+phase_out_end = 253_414
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-r/5005-r-25f.pdf"
+ref = "Ligne 30000 : 16 129 $ si la ligne 23600 ≤ 177 882 $, 14 538 $ si ≥ 253 414 $, feuille de travail entre les deux"
+status = "published"
+
+[age_amount]
+amount = 9_028
+threshold = 45_522
+reduction_rate = 0.15
+minimum_age = 65
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25e.pdf"
+ref = "Feuille 5000-D1 2025, ligne 30100 : 9 028 $ si le revenu net ≤ 45 522 $, nul à 105 709 $ (réduction de 15 %)"
+status = "published"
+
+[pension_amount]
+maximum = 2_000
+minimum_age_for_rrif = 65
+source = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31400-pension-income-amount.html"
+ref = "Ligne 31400 (maximum 2 000 $) : FERR admissible à 65 ans et plus; PSV, RPC/RRQ et retraits forfaitaires REER exclus"
+status = "published"
+
+[canada_employment_amount]
+maximum = 1_471
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-r/5005-r-25f.pdf"
+ref = "Ligne 31260 : le moins élevé de 1 471 $ et du revenu d'emploi"
+status = "published"
+
+[oas_recovery]
+threshold = 93_454
+rate = 0.15
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-r/5005-r-25f.pdf"
+ref = "Ligne 23500 : grille si la ligne 23400 dépasse 93 454 $. Taux de 15 % : feuille 5000-D1 2025"
+status = "published"
+
+[quebec_abatement]
+rate = 0.165
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-r/5005-r-25f.pdf"
+ref = "Ligne 44000 : montant de la ligne 42900 × 16,5 %"
+status = "published"
+
+[dividends]
+eligible_gross_up = 0.38
+other_gross_up = 0.15
+eligible_credit_rate = 0.150198
+other_credit_rate = 0.090301
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25e.pdf"
+ref = "Feuille 5000-D1 2025, ligne 40425 : 15,0198 % et 9,0301 % du montant majoré (138 % et 115 %)"
+status = "published"
+
+[capital_gains]
+inclusion_rate = 0.5
+source = "https://www.pm.gc.ca/en/news/news-releases/2025/03/21/prime-minister-mark-carney-cancels-proposed-capital-gains-tax-increase"
+ref = "Hausse aux deux tiers annulée le 2025-03-21; l'ARC applique la moitié"
+status = "published"
+
+[minimum_tax]
+rate = 0.205
+exemption = 177_882
+capital_gains_inclusion = 1.0
+deduction_addback_rate = 0.5
+credit_fraction = 0.5
+source = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/deductions-credits-expenses/line-41700-minimum-tax.html"
+ref = "T691 2025 : exemption de 177 882 $ (partie 1, ligne 94), revenu imposable rajusté (gains à 100 %, dividendes au montant réel, 50 % des déductions des lignes 54 à 62, dont 22215), montant minimum = 20,5 % au-delà de l'exemption − 50 % de la ligne 33800, impôt fédéral = le plus élevé des deux (partie 6, ligne 41700; abattement calculé sur ce montant, note 14). Ligne 41700 : exemption de 177 882 $ pour 2025; taux, inclusion et crédits : budget fédéral 2023"
+status = "published"

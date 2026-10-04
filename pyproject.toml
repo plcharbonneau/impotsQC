@@ -1,0 +1,39 @@
+[project]
+name = "impotsqc"
+version = "0.2.0"
+description = "Déclarations de revenus fédérale (T1) et du Québec (TP-1), ligne par ligne, pour scripts et agents."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Pier-Luc Charbonneau" }]
+keywords = ["impôt", "québec", "TP-1", "T1", "fiscalité", "REER", "FERR", "RRQ", "PSV"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Natural Language :: French",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Office/Business :: Financial :: Accounting",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# Les paramètres annuels (TOML, sources officielles) voyagent DANS le paquet : ce sont des faits
+# publiés par l'État, sans contrainte de licence. Les cas de validation restent dans l'archive source.
+source-include = ["tests/**", "CHANGELOG.md"]
+source-exclude = ["**/.DS_Store", "**/__pycache__"]
+wheel-exclude = ["**/.DS_Store", "**/__pycache__"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "src"]
+pythonpath = ["src", "tests"]
+addopts = "-q --doctest-modules"

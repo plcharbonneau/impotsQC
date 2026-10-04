@@ -1,0 +1,26 @@
+# Cotisations sociales 2025 d'un salarié au Québec. Conventions : voir parametres/2026/federal.toml.
+
+[qpp]
+basic_exemption = 3_500
+maximum_pensionable_earnings = 71_300
+additional_maximum_pensionable_earnings = 81_200
+base_rate = 0.054
+first_additional_rate = 0.01
+second_additional_rate = 0.04
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.U%282025-12%29.pdf"
+ref = "Annexe U 2025 : exemption de 3 500 $, MGA de 71 300 $, MSGA de 81 200 $, taux de 6,4 % (base 5,4 % + premier supplément 1 %; facteur 0,156250 = 1/6,4), deuxième supplément de 4 %"
+status = "published"
+
+[employment_insurance]
+maximum_insurable_earnings = 65_700
+rate = 0.0131
+source = "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/employment-insurance-ei/ei-premium-rates-maximums.html"
+ref = "Ligne 2025 du tableau : 65 700 $, taux du Québec 1,31 %; T1 2025, ligne 31200 (maximum 860,67 $)"
+status = "published"
+
+[qpip]
+maximum_insurable_earnings = 98_000
+rate = 0.00494
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.R%282025-12%29.pdf"
+ref = "Annexe R 2025 : revenu maximal assurable de 98 000 $, taux du salarié de 0,494 %; T1 2025, ligne 31205 (maximum 484,12 $)"
+status = "published"

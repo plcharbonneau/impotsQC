@@ -1,0 +1,29 @@
+# Cotisations sociales 2026 d'un salarié au Québec. Mêmes conventions que federal.toml.
+
+[qpp]
+# RRQ. Base 5,30 % + premier supplémentaire 1 % (6,30 % jusqu'au MGA), deuxième supplémentaire
+# 4 % entre le MGA et le MSGA. Fédéral : crédit sur la part de base (5,30 / 6,30), déduction
+# ligne 22215 pour la part bonifiée. Québec : déduction ligne 248, aucun crédit.
+basic_exemption = 3_500
+maximum_pensionable_earnings = 74_600
+additional_maximum_pensionable_earnings = 85_000
+base_rate = 0.053
+first_additional_rate = 0.01
+second_additional_rate = 0.04
+source = "https://www.retraitequebec.gouv.qc.ca/en/programs/quebec-pension-plan/quebec-pension-plan-figures"
+ref = "Retraite Québec : chiffres 2026 (cotisation maximale 4 479,30 $ + 416 $). Taux de base 5,4 → 5,3 % : bulletin 2025-8"
+status = "published"
+
+[employment_insurance]
+maximum_insurable_earnings = 68_900
+rate = 0.013
+source = "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/employment-insurance-ei/ei-premium-rates-maximums.html"
+ref = "Ligne 2026 du tableau (2025-09-16) : taux du Québec 1,30 %, cotisation maximale 895,70 $"
+status = "published"
+
+[qpip]
+maximum_insurable_earnings = 103_000
+rate = 0.0043
+source = "https://www.quebec.ca/entreprises-et-travailleurs-autonomes/administrer-gerer/embauche-gestion-personnel/assurance-parentale/revenu-maximal-assurable"
+ref = "Revenu maximal assurable 2026 (2026-02-26); taux du salarié 0,430 %, cotisation maximale 442,90 $. Crédit fédéral ligne 31205; aucun crédit ni déduction au Québec pour un salarié"
+status = "published"

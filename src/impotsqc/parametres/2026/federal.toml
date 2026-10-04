@@ -1,0 +1,99 @@
+# Paramètres fédéraux 2026 (T1, résident du Québec).
+#
+# Chaque table porte `source` (URL officielle), `ref` (où lire la valeur) et `status` :
+#   published   publié pour 2026;
+#   rule_2025   règle ou taux statutaire non indexé, lu sur le formulaire 2025, aucun changement trouvé pour 2026;
+#   derived     dérivé d'une règle officielle (la règle est citée);
+#   unpublished pas encore publié : valeur provisoire, signalée dans les résultats;
+#   incomplete  paramètres partiels : la règle n'est pas encore calculable.
+# Recensement du 2026-10-04. Montants en dollars, taux en fractions.
+
+[brackets]
+thresholds = [58_523, 117_045, 181_440, 258_482]
+rates = [0.14, 0.205, 0.26, 0.29, 0.33]
+source = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/tax-rates-brackets/current-year.html"
+ref = "Tableau « Federal rate for 2026 » (page modifiée le 2026-06-25); taux de 14 % : Finances Canada, 2025-05-27"
+status = "published"
+
+[credits]
+rate = 0.14
+source = "https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jan/t4127-jan-payroll-deductions-formulas-computer-programs.html"
+ref = "T4127, 122e édition : le plus bas taux (14 %) s'applique aux crédits K1 et K2Q"
+status = "published"
+
+[top_up_credit]
+# Ligne 34990, années 2025 à 2030 : garde 15 % sur les montants de crédits au-delà du 1er palier.
+amounts_threshold = 58_523
+rate = 0.01
+source = "https://budget.canada.ca/2025/report-rapport/tm-mf-en.html"
+ref = "Budget 2025 (2025 à 2030). Feuille 5000-D1 2025, ligne 34990 : (crédits − 57 375 × 14,5 %) × 3,45 %, soit 0,5 % des montants au-delà du palier; en 2026 : 15 % − 14 % = 1 % au-delà de 58 523 $"
+status = "derived"
+
+[basic_personal_amount]
+maximum = 16_452
+minimum = 14_829
+phase_out_start = 181_440
+phase_out_end = 258_482
+source = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/frequently-asked-questions-individuals/adjustment-personal-income-tax-benefit-amounts.html"
+ref = "Indexation 2026 (page du 2026-03-12); formule BPAF du T4127 : réduction linéaire de la bonification (1 623 $) entre les 4e et 5e paliers, selon le revenu net"
+status = "published"
+
+[age_amount]
+amount = 9_208
+threshold = 46_432
+reduction_rate = 0.15
+minimum_age = 65
+source = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/frequently-asked-questions-individuals/adjustment-personal-income-tax-benefit-amounts.html"
+ref = "Indexation 2026 : 9 208 $ et 46 432 $. Taux de 15 % : feuille 5000-D1 2025, ligne 30100 (9 028 $ nuls à 105 709 $ pour un seuil de 45 522 $)"
+status = "published"
+
+[pension_amount]
+maximum = 2_000
+minimum_age_for_rrif = 65
+source = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31400-pension-income-amount.html"
+ref = "Ligne 31400 : FERR et rente REER admissibles à 65 ans et plus; PSV, RPC/RRQ et retraits forfaitaires REER exclus. Feuille 5000-D1 2025 : le moindre du revenu admissible et de 2 000 $"
+status = "rule_2025"
+
+[canada_employment_amount]
+maximum = 1_501
+source = "https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4032-payroll-deductions-tables/t4032qc-jan/t4032qc-january-general-information.html"
+ref = "T4032-QC janvier 2026 (2025-12-17) : maximum 1 501 $, crédit 210,14 $"
+status = "published"
+
+[oas_recovery]
+threshold = 95_323
+rate = 0.15
+source = "https://www.canada.ca/en/services/benefits/publicpensions/old-age-security/repayment.html"
+ref = "Seuil 2026 : page d'indexation de l'ARC (2025 = 93 454 $). Taux de 15 % : page du remboursement (2026-09-29). Lignes 23500 et 42200"
+status = "published"
+
+[quebec_abatement]
+rate = 0.165
+source = "https://www.canada.ca/en/department-finance/programs/federal-transfers/quebec-abatement.html"
+ref = "Finances Canada (2026-03-09) : 16,5 points; T4032-QC 2026 : 16,5 %. Ligne 44000, sur l'impôt fédéral de base (ligne 42900)"
+status = "published"
+
+[dividends]
+eligible_gross_up = 0.38
+other_gross_up = 0.15
+eligible_credit_rate = 0.150198
+other_credit_rate = 0.090301
+source = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/personal-income/line-12000-taxable-amount-dividends-eligible-other-than-eligible-taxable-canadian-corporations.html"
+ref = "Ligne 12000 (2026-06-12) : 138 % et 115 %. Crédits : feuille 5000-D1 2025, ligne 40425 (15,0198 % et 9,0301 % du montant majoré)"
+status = "rule_2025"
+
+[capital_gains]
+inclusion_rate = 0.5
+source = "https://www.pm.gc.ca/en/news/news-releases/2025/03/21/prime-minister-mark-carney-cancels-proposed-capital-gains-tax-increase"
+ref = "Hausse aux deux tiers annulée le 2025-03-21; l'ARC applique la moitié"
+status = "published"
+
+[minimum_tax]
+rate = 0.205
+exemption = 181_440
+capital_gains_inclusion = 1.0
+deduction_addback_rate = 0.5
+credit_fraction = 0.5
+source = "https://www.budget.canada.ca/2023/report-rapport/tm-mf-en.html"
+ref = "T691 2025 : revenu imposable rajusté (partie 1 : gains à 100 %, dividendes au montant réel, 50 % des déductions des lignes 54 à 62, dont 22215), montant minimum = 20,5 % au-delà de l'exemption − 50 % de la ligne 33800 (ligne 98), impôt fédéral = le plus élevé des deux (partie 6, ligne 41700; abattement du Québec calculé sur ce montant, note 14). Budget 2023 : taux de 20,5 %, exemption = début de la 4e tranche (indexée), gains inclus à 100 %, 50 % de la plupart des crédits. Ligne 41700 : 177 882 $ pour 2025; 181 440 $ dérivé pour 2026"
+status = "derived"

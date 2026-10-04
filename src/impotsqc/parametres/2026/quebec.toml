@@ -1,0 +1,103 @@
+# Paramètres du Québec 2026 (TP-1). Mêmes conventions que federal.toml.
+# Source principale : Finances Québec, « Paramètres du régime d'imposition des particuliers 2026 »,
+# Tableau 3 (novembre 2025, indexation de 2,05 %).
+
+[brackets]
+thresholds = [54_345, 108_680, 132_245]
+rates = [0.14, 0.19, 0.24, 0.2575]
+source = "https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/taux-dimposition/"
+ref = "Tableau « Taux d'imposition pour l'année 2026 »; seuils repris au Tableau 3 de Finances Québec"
+status = "published"
+
+[credits]
+rate = 0.14
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D%282025-12%29.pdf"
+ref = "TP-1 2025, ligne 377.1 × 14 %; le 1er palier reste à 14 % en 2026"
+status = "rule_2025"
+
+[basic_personal_amount]
+amount = 18_952
+source = "https://cdn-contenu.quebec.ca/cdn-contenu/adm/min/finances/publications-adm/parametres/AUTFR_RegimeImpot2026.pdf"
+ref = "Tableau 3 : montant personnel de base (2025 = 18 571 $). Ligne 350"
+status = "published"
+
+[schedule_b]
+# Annexe B : montants pour personne vivant seule, en raison de l'âge et pour revenus de retraite,
+# réduits selon le revenu familial (ligne 361).
+living_alone = 2_172
+single_parent_supplement = 2_681
+age = 3_986
+minimum_age = 65
+retirement_income_maximum = 3_541
+retirement_income_factor = 1.25
+reduction_threshold = 42_955
+reduction_rate = 0.1875
+source = "https://cdn-contenu.quebec.ca/cdn-contenu/adm/min/finances/publications-adm/parametres/AUTFR_RegimeImpot2026.pdf"
+ref = "Tableau 3 : montants et seuil 2026. Facteur 1,25 et taux de 18,75 % : Annexe B 2025 (TP-1.D.B). Revenus admissibles : lignes 122 et 123 (RPA, FERR, rente REER); PSV et RRQ exclues"
+status = "published"
+
+[workers_deduction]
+rate = 0.06
+maximum = 1_450
+source = "https://www.revenuquebec.ca/fr/entreprises/retenues-a-la-source-et-cotisations-de-lemployeur/employeur-principaux-changements-2026/"
+ref = "Maximum 2026 : 1 450 $ (Tableau 3). Taux de 6 % : guide 2025, ligne 201"
+status = "published"
+
+[dividends]
+eligible_gross_up = 0.38
+other_gross_up = 0.15
+eligible_credit_rate = 0.117
+other_credit_rate = 0.0342
+source = "https://www.budget.finances.gouv.qc.ca/budget/outils/depenses-fiscales/fiches/fiche-130501.asp"
+ref = "Fiche 130501 : 11,7 % (déterminés) et 3,42 % (ordinaires) du montant majoré. Bulletin 2026-3 : les ordinaires passent à 2,69 % APRÈS le 2026-12-31. Ligne 415"
+status = "published"
+
+[career_extension]
+# Ligne 391, formulaire TP-752.PC : 14 % du revenu de travail admissible au-delà de l'exclusion
+# (plafonné), réduit de 7 % du revenu net (ligne 275) au-delà du seuil. 65 ans et plus depuis 2025.
+minimum_age = 65
+excluded_income = 7_655
+maximum_eligible_income = 12_755
+credit_rate = 0.14
+reduction_threshold = 57_660
+reduction_rate = 0.07
+source = "https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-391/"
+ref = "Revenu Québec, ligne 391 et crédit pour prolongation de carrière (2025) : rien si le revenu de travail admissible est de 7 500 $ ou moins, crédit maximal de 1 750 $ (14 % × 12 500 $), réduit de 7 % du revenu net au-delà de 56 500 $, nul à 81 500 $. Montants 2026 : Tableau 3 de Finances Québec"
+status = "published"
+
+[minimum_tax]
+# Annexe E, partie B, et formulaire TP-776.42 : le plus élevé de l'impôt ordinaire (ligne 430) et de
+# l'impôt minimum. Paramètres « similaires » au fédéral (bulletin 2023-4) : gains en capital à 100 %,
+# dividendes au montant réel, 50 % des déductions visées rajoutées, 50 % des crédits non remboursables.
+rate = 0.19
+exemption = 183_680
+capital_gains_inclusion = 1.0
+deduction_addback_rate = 0.5
+credit_fraction = 0.5
+source = "https://cffp.recherche.usherbrooke.ca/outils-ressources/guide-mesures-fiscales/impot-minimum-remplacement/"
+ref = "Taux de 19 % et exemption : bulletin d'information 2023-4 et Tableau 3 de Finances Québec (2026). Calcul [19 % × (revenu imposable rajusté − exemption)] − 50 % des crédits non remboursables : Chaire en fiscalité et en finances publiques (Université de Sherbrooke). Le formulaire TP-776.42 n'a pas pu être lu (accès refusé)"
+status = "derived"
+
+[health_services_fund]
+# Annexe F. La base exclut notamment le revenu d'emploi, la PSV et la majoration des dividendes.
+first_threshold = 18_500
+second_threshold = 64_355
+rate = 0.01
+first_maximum = 150
+maximum = 1_000
+source = "https://cdn-contenu.quebec.ca/cdn-contenu/adm/min/finances/publications-adm/Bulletins/EN/BULEN_2025-8.pdf"
+ref = "Bulletin 2025-8 (2025-11-25), notes 17-18; seuils au Tableau 3. Exclusions de la base : Annexe F 2025 (TP-1.D.F)"
+status = "published"
+
+[drug_insurance]
+# Annexe K, ligne 447. Particulier sans conjoint. La cotisation calculée est plafonnée à la prime
+# annuelle en vigueur au 31 décembre (`rate_cap`), puis au maximum de l'année (`annual_maximum`).
+rate_cap = 789
+annual_maximum = 777
+exemption_single = 20_300
+first_bracket_width = 5_000
+first_rate_single = 0.0784
+second_rate_single = 0.1176
+source = "https://www.ramq.gouv.qc.ca/fr/salle-presse/communiques/2026-06-30/ajustement-tarifs-personnes-couvertes-regime-public-assurance"
+ref = "RAMQ (2026-06-30) : prime annuelle de 789 $ dès juillet 2026, 766 $ avant. Maximum de l'année = 6 × 63,83 + 6 × 65,75 = 777,48 $, arrondi au dollar comme sur l'Annexe K 2025 (754,98 $ imprimé 755 $). Exemption : 19 890 $ (Annexe K 2025, ligne 40) indexée de 2,05 %, estimation. Taux : Annexe K 2025, ligne 80"
+status = "unpublished"

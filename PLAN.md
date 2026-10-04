@@ -8,14 +8,24 @@ Arbitré par PL le 2026-10-04 :
 
 ## Ce que la librairie rend
 
-`compute(Taxpayer) -> TaxReturn`. Pour chaque juridiction, `TaxReturn` donne un dictionnaire de
-lignes indexé par **numéro officiel**. Chaque `Line` porte :
-- `number`, `label` (libellé officiel), `amount`;
-- `rule` : la formule appliquée, en une phrase;
-- `source` : document officiel et ligne du formulaire.
+`compute(Taxpayer) -> TaxReturn`. `TaxReturn.forms` contient un objet `Form` par déclaration
+ou annexe applicable, sous son code officiel. `r.federal` et `r.quebec` sont des alias de `T1`
+et `TP-1`. Une fonction par annexe remplit le même type générique `Form` : aucune classe propre
+à un formulaire et aucun attribut Python propre à un numéro de ligne.
 
-Les annexes ont leurs propres lignes, nommées `"<annexe>:<ligne>"`. `to_dict()` sérialise le tout
-en JSON pour un agent. Les entrées sont des montants annuels d'un contribuable fictif.
+Chaque `Form` expose `code`, `title`, `version`, `source` et `lines`. Chaque `Line` immuable porte :
+- `number`, `label`, `amount`, `rule`;
+- `refs`, les liens vers les lignes sources au format `CODE:ligne`;
+- `params`, les clés `fichier.table.clé` dont la table porte la source officielle.
+
+Les clés de lignes sont les numéros officiels 2025. Le T691 utilise `P1-93`, `P5-11`, etc.,
+car sa numérotation recommence à chaque partie. Le TP-776.42 utilise `22` pour le revenu
+imposable modifié. `to_dict()` rend les métadonnées et les lignes dans `forms`; les anciens
+conteneurs JSON `federal` et `quebec` sont conservés pendant la version 0.3.
+
+Les métadonnées sont des données annuelles dans `formulaires.toml`. Les documents de 2025 sont
+encore utilisés pour 2026 (`rule_2025`), sans modifier les taux et seuils de 2026. Le document
+`FIXATION-PA` porte la version imprimée `2016-01`, commune aux deux années livrées.
 
 ## Années
 
@@ -24,7 +34,8 @@ en JSON pour un agent. Les entrées sont des montants annuels d'un contribuable 
 ```
 src/impotsqc/parametres/2026/federal.toml      paliers, montants, taux, seuils (+ source par valeur)
 src/impotsqc/parametres/2026/quebec.toml
-src/impotsqc/parametres/2026/cotisations.toml  RRQ, AE, RQAP, FSS, RAMQ
+src/impotsqc/parametres/2026/cotisations.toml  RRQ, AE, RQAP
+src/impotsqc/parametres/2026/formulaires.toml  titres, versions, PDF officiels, références et statuts
 oracle/2026/cas.json                           relevés d'un oracle externe (local, ignoré par git)
 ```
 
@@ -84,8 +95,8 @@ estimé de 30 à 60 fois, à mesurer au premier prototype. Branché tel quel, il
      dividendes, impôt minimum, cotisation RAMQ, contribution au FSS.
    - **Cotisations du salarié** : RRQ (base et bonifiée), AE (taux du Québec), RQAP.
    - **Impôt minimum de remplacement** : T691 au fédéral (concordance exacte avec l'oracle);
-     annexe E et TP-776.42 au Québec, calculés par analogie avec le fédéral à partir des
-     paramètres officiels (le formulaire TP-776.42 n'a pas pu être lu). Le report sur sept ans
+     annexe E et TP-776.42 au Québec. La refonte 0.3 expose les étapes dans les documents
+     officiels sans changer les règles numériques héritées de 0.2. Le report sur sept ans
      n'est pas modélisé; un avertissement l'indique.
    - Numéros d'annexes et de lignes : repris des formulaires officiels (versions 2025 tant que
      2026 n'est pas publié), jamais de mémoire.
@@ -97,6 +108,42 @@ estimé de 30 à 60 fois, à mesurer au premier prototype. Branché tel quel, il
 5. **Intégration `retraiteqc`** : un `TaxSystem` adossé à `impotsqc`, neutre par défaut (le
    test d'oracle de `retraiteqc` reste à l'égalité exacte), plus le levier 1. Mesure du temps
    de simulation avant et après. Puis re-mesure appariée des verdicts qui en dépendent.
+
+## Extraction des formulaires (0.3.0)
+
+Implémentée le 2026-10-04 à partir de `main` (`0cbe38e`). Les fonctions des modules
+`federal_schedules` et `quebec_schedules` remplissent les annexes avant que leur résultat soit
+repris dans le T1 ou le TP-1. Les liens rendent les dépendances lisibles, sans moteur de graphe
+ni résolution dynamique dans le chemin de calcul.
+
+Les formulaires absents ne sont pas construits. Une annexe présente expose seulement les parties
+utiles et couvertes par le moteur : pas de report d'IMR fictif, pas de conjoint fictif. La partie 6
+du T691 est omise lorsque l'impôt ordinaire domine; les grilles sans ajouts ou réductions du
+TP-776.42 et la grille de la RAMQ dont le plafond est atteint sont omises.
+
+Vérifications : 278 tests réussis avec les relevés locaux; 2 005 déclarations fictives comparées
+ligne par ligne à la version 0.2.0, **aucun écart exact**, y compris les cinq clés déplacées et
+le total à payer. Les tests de continuité et de revenu net croissant restent inchangés.
+
+Mesure `timeit` sur Python 3.14.3, entrées préconstruites et paramètres chargés, médiane de
+7 répétitions de 10 000 appels. Le coût inclut tous les objets rendus par `compute()`, sans
+sérialisation JSON. Les temps dépendent de la machine; le script est reproductible :
+
+```bash
+PYTHONPATH=src python benchmarks/compute.py
+```
+
+| Profil fictif, année 2026 | 0.2.0 (µs) | 0.3.0 (µs) | Rapport |
+| --- | ---: | ---: | ---: |
+| Salarié, 40 ans, emploi de 80 000 $ | 24,837 | 24,327 | 0,98× |
+| Retraité, 66 ans, FERR 30 000 $, PSV 9 000 $, RRQ 12 000 $ | 25,184 | 32,252 | 1,28× |
+| Prolongation de carrière, 67 ans, emploi de 45 000 $ | 25,225 | 31,662 | 1,26× |
+| IMR, 50 ans, gain en capital de 600 000 $ | 26,691 | 39,692 | 1,49× |
+| Sans revenu, 40 ans | 24,092 | 20,232 | 0,84× |
+
+L'ajout de `refs` et `params` à la dataclass gelée initiale dépassait le budget de performance.
+`Line` utilise donc un tuple nommé immuable, qui réduit le coût mesuré de construction, sans
+nouvelle dépendance. Les calculs ne font pas de recherche de métadonnées par ligne.
 
 ## Pension alimentaire pour enfants (0.2.0)
 
@@ -125,8 +172,9 @@ diverge. Chacune est à confirmer par un logiciel certifié par Revenu Québec.
    jusqu'à l'annexe K 2026. En 2025, l'oracle et impotsqc donnent tous deux 755 $.
 3. **Impôt minimum du Québec.** Taux de 19 %, exemption indexée, gains en capital à 100 % et 50 %
    des crédits non remboursables : bulletin d'information 2023-4 de Finances Québec et Chaire en
-   fiscalité et en finances publiques. Le détail des déductions rajoutées est calqué sur le T691;
-   à vérifier sur le TP-776.42.
+   fiscalité et en finances publiques. La refonte 0.3 a vérifié la numérotation sur le TP-776.42, mais conserve le calcul 0.2 :
+   revenu imposable après plancher à zéro et cotisations bonifiées seules dans les déductions
+   rajoutées. Les corrections fiscales sont distinctes de cette refonte sans changement de montants.
 
 ## Hors portée de la v0.1
 

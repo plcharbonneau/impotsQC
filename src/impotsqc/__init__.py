@@ -20,10 +20,10 @@ from . import rules
 from .child_support import ChildSupportCase, ChildSupportResult, ParentIncome, compute_child_support
 from .federal import federal_return
 from .model import Form, Line, Taxpayer, TaxReturn
-from .parameters import load_parameters, provisional
+from .parameters import PROVISIONAL_STATUSES, load_parameters
 from .quebec import quebec_return
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = ["ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
            "compute", "compute_child_support", "load_parameters"]
 
@@ -38,26 +38,28 @@ def _params(year: int) -> dict:
 
 
 def compute(taxpayer: Taxpayer) -> TaxReturn:
-    """Remplit le T1 et le TP-1 de `taxpayer` pour son année."""
+    """Remplit les déclarations et les annexes applicables dans `TaxReturn.forms`."""
     params = _params(taxpayer.year)
     qpp = rules.qpp_contributions(taxpayer.employment_income, params["cotisations"]["qpp"])
-    federal = federal_return(taxpayer, params, qpp)
-    quebec = quebec_return(taxpayer, params, qpp, oas_repayment=federal.amount("23500"))
-    return TaxReturn(taxpayer, federal, quebec, _warnings(taxpayer, params, quebec, federal))
+    forms: dict[str, Form] = {}
+    federal = federal_return(taxpayer, params, qpp, forms=forms)
+    quebec_return(taxpayer, params, qpp, oas_repayment=federal.amount("23500"), forms=forms)
+    return TaxReturn(taxpayer, forms, _warnings(taxpayer, params, forms))
 
 
-def _warnings(tp: Taxpayer, params: dict, quebec: Form, federal: Form) -> tuple[str, ...]:
+def _warnings(tp: Taxpayer, params: dict, forms: dict[str, Form]) -> tuple[str, ...]:
     """Avertissements qui touchent CE contribuable : paramètres provisoires, règles dérivées, reports."""
+    quebec = forms["TP-1"]
     out = []
-    if "quebec.drug_insurance" in provisional(params) and quebec.amount("447") > 0:
+    if params["quebec"]["drug_insurance"]["status"] in PROVISIONAL_STATUSES and quebec.amount("447") > 0:
         out.append(f"Ligne 447 (annexe K) : paramètres {tp.year} provisoires, non encore publiés.")
     if tp.age >= 65 and tp.employment_income > 0:
         out.append("RRQ : le choix de cesser de cotiser à 65 ans et plus n'est pas modélisé.")
-    if federal.amount("T691:103") > federal.amount("40600"):
-        extra = federal.amount("T691:103") - federal.amount("40600")
+    if "T691" in forms and forms["T691"].amount("P5-11") > 0:
+        extra = forms["T691"].amount("P5-11")
         out.append(f"Impôt minimum fédéral : {extra:,.0f} $ d'impôt additionnel, reportable sur sept ans "
                    "(report non modélisé).")
-    if quebec.amount("E:15") > max(0.0, quebec.amount("430")):
-        out.append("Impôt minimum du Québec : paramètres officiels, calcul calqué sur le fédéral "
-                   "(formulaire TP-776.42 non lu); report sur sept ans non modélisé.")
+    if "TP-1.D.E" in forms and forms["TP-1.D.E"].amount("15") > max(0.0, quebec.amount("430")):
+        out.append("Impôt minimum du Québec : portée de calcul héritée du moteur 0.2; "
+                   "report sur sept ans non modélisé.")
     return tuple(out)

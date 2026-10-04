@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
+from typing import NamedTuple
 
 
 @dataclass(frozen=True)
@@ -42,31 +43,48 @@ class Taxpayer:
                 raise ValueError(f"{f.name} ne peut pas être négatif : {value}")
 
 
-@dataclass(frozen=True)
-class Line:
+class Line(NamedTuple):
     """Une ligne de formulaire : numéro officiel, libellé officiel, montant, règle appliquée."""
 
     number: str
     label: str
     amount: float
     rule: str = ""
+    refs: tuple[str, ...] = ()
+    params: tuple[str, ...] = ()
 
 
 @dataclass
 class Form:
-    """Formulaire rempli (`"T1"` ou `"TP-1"`), lignes dans l'ordre de calcul.
+    """Formulaire ou annexe rempli, identifié par son code officiel.
 
     Les montants ne sont pas arrondis : la fonction d'impôt reste continue, ce que demandent les
     recherches de racine de `retraiteqc`. `to_dict()` arrondit au cent pour l'affichage.
     """
 
-    name: str
+    code: str
     lines: dict[str, Line] = field(default_factory=dict)
+    title: str = ""
+    version: str = ""
+    source: str = ""
 
-    def add(self, number: str, label: str, amount: float, rule: str = "") -> float:
+    @classmethod
+    def from_parameters(cls, code: str, params: dict) -> Form:
+        """Crée un formulaire vide avec les métadonnées de l'année, sans copier les paramètres."""
+        meta = params["formulaires"][code]
+        return cls(code, title=meta["title"], version=meta["version"], source=meta["source"])
+
+    @property
+    def name(self) -> str:
+        """Alias historique de `code`."""
+        return self.code
+
+    def add(self, number: str, label: str, amount: float, rule: str = "", *,
+            refs: tuple[str, ...] = (), params: tuple[str, ...] = ()) -> float:
         """Inscrit une ligne et rend son montant."""
-        self.lines[number] = Line(number, label, float(amount), rule)
-        return float(amount)
+        amount = float(amount)
+        self.lines[number] = Line(number, label, amount, rule, refs, params)
+        return amount
 
     def __getitem__(self, number: str) -> Line:
         """La ligne `number` (KeyError si elle n'a pas été remplie)."""
@@ -77,9 +95,11 @@ class Form:
         line = self.lines.get(number)
         return line.amount if line else 0.0
 
-    def to_dict(self) -> dict[str, dict]:
-        """`{numéro: {"label", "amount", "rule"}}`, montants au cent."""
-        return {n: {"label": l.label, "amount": round(l.amount, 2), "rule": l.rule} for n, l in self.lines.items()}
+    def to_dict(self) -> dict:
+        """Métadonnées et lignes sérialisables en JSON; montants au cent, liens conservés."""
+        return {"title": self.title, "version": self.version, "source": self.source,
+                "lines": {n: {"label": l.label, "amount": round(l.amount, 2), "rule": l.rule,
+                              "refs": list(l.refs), "params": list(l.params)} for n, l in self.lines.items()}}
 
 
 @dataclass(frozen=True)
@@ -87,9 +107,18 @@ class TaxReturn:
     """Déclarations fédérale et québécoise d'un contribuable, avec les avertissements de calcul."""
 
     taxpayer: Taxpayer
-    federal: Form
-    quebec: Form
+    forms: dict[str, Form]
     warnings: tuple[str, ...] = ()
+
+    @property
+    def federal(self) -> Form:
+        """Alias de `forms["T1"]`, conservé pour les utilisateurs de l'API historique."""
+        return self.forms["T1"]
+
+    @property
+    def quebec(self) -> Form:
+        """Alias de `forms["TP-1"]`, conservé pour les utilisateurs de l'API historique."""
+        return self.forms["TP-1"]
 
     @property
     def federal_payable(self) -> float:
@@ -114,11 +143,14 @@ class TaxReturn:
 
     def to_dict(self) -> dict:
         """Déclaration complète en JSON simple, pour un script ou un agent."""
+        forms = {code: form.to_dict() for code, form in self.forms.items()}
         return {
             "year": self.taxpayer.year,
             "taxpayer": asdict(self.taxpayer),
-            "federal": self.federal.to_dict(),
-            "quebec": self.quebec.to_dict(),
+            "forms": forms,
+            # Compatibilité 0.3 : les deux dictionnaires de lignes historiques restent disponibles.
+            "federal": forms["T1"]["lines"],
+            "quebec": forms["TP-1"]["lines"],
             "summary": {k: round(getattr(self, k), 2) for k in
                         ("federal_payable", "quebec_payable", "payroll_contributions", "total_payable")},
             "warnings": list(self.warnings),

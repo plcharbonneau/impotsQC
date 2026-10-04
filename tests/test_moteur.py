@@ -94,9 +94,9 @@ def test_impot_minimum_gros_gain_en_capital():
     minimum remplace l'impôt ordinaire, l'abattement du Québec se calcule sur lui, et c'est signalé."""
     r = compute(Taxpayer(year=2026, age=50, capital_gains=600_000))
     f, q = r.federal, r.quebec
-    assert f.amount("T691:103") > f.amount("40600") and f.amount("41700") == f.amount("T691:103")
-    assert f.amount("44000") == pytest.approx(0.165 * f.amount("T691:103"))
-    assert q.amount("E:15") > q.amount("430") and q.amount("432") == q.amount("E:15")
+    assert r.forms["T691"].amount("P1-103") > f.amount("40600") and f.amount("41700") == r.forms["T691"].amount("P1-103")
+    assert f.amount("44000") == pytest.approx(0.165 * r.forms["T691"].amount("P1-103"))
+    assert r.forms["TP-1.D.E"].amount("15") > q.amount("430") and q.amount("432") == r.forms["TP-1.D.E"].amount("15")
     assert any("minimum fédéral" in w for w in r.warnings) and any("minimum du Québec" in w for w in r.warnings)
 
 

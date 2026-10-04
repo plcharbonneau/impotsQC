@@ -10,7 +10,7 @@ Une fonction rend None avant de construire un formulaire qui ne s'applique pas.
 from __future__ import annotations
 
 from . import rules
-from .model import Form, Taxpayer
+from .model import Form, Line, Taxpayer
 
 
 def schedule_b(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
@@ -313,4 +313,113 @@ def schedule_e(params: dict, quebec: Form, minimum: Form) -> Form:
                 refs=("TP-1.D.E:14", "TP-1.D.E:15"))
     f.add("18", "Impôt du Québec", tax, "aucune déduction relative aux opérations forestières",
           refs=("TP-1.D.E:16",))
+    return f
+
+
+def capital_gains(tp: Taxpayer, params: dict) -> Form | None:
+    """Annexe G, partie F : gain net fourni et inclusion, sans inventer de transactions."""
+    if tp.capital_gains <= 0:
+        return None
+    f = Form.from_parameters("TP-1.D.G", params)
+    net = f.add("94.1", "Gains (ou perte nette) en capital", tp.capital_gains,
+                "gain net fourni avant inclusion; ventilation par bien et provisions non modélisées")
+    rate = f.add("107", "Taux d'inclusion", params["federal"]["capital_gains"]["inclusion_rate"],
+                 "taux exprimé comme fraction", params=("federal.capital_gains.inclusion_rate",))
+    taxable = f.add("107.1", "Montant de la ligne 94.1 multiplié par le taux d'inclusion", net * rate,
+                    refs=("TP-1.D.G:94.1", "TP-1.D.G:107"))
+    f.add("108", "Gains en capital imposables (ou perte nette en capital)", taxable,
+          "aucun gain à inclusion de 100 % dans les entrées du moteur", refs=("TP-1.D.G:107.1",))
+    return f
+
+
+def qpp_employment(tp: Taxpayer, params: dict, quebec: Form, qpp: rules.QppContributions) -> Form | None:
+    """Annexe U, partie B : déduction du salarié québécois sans trop-perçu ni prorata mensuel.
+
+    La ventilation des retenues simulées vient de la même règle que l'annexe 8. Les formes
+    algébriques conservent exactement les montants du moteur, sans arrondir entre les lignes.
+    Les cas de 18 ans ou de 73 ans et plus restent signalés hors de cette extraction.
+    """
+    if qpp.enhanced <= 0 or not 19 <= tp.age <= 72:
+        return None
+    t = params["cotisations"]["qpp"]
+    f = Form.from_parameters("TP-1.D.U", params)
+    withheld = quebec.amount("98")
+    salary = float(min(tp.employment_income, t["maximum_pensionable_earnings"]))
+    exemption = float(t["basic_exemption"])
+    earnings = salary - exemption
+    maximum = float(t["maximum_pensionable_earnings"])
+    ceiling = max(0.0, maximum - exemption)
+    pensionable = quebec.amount("98.1")
+    above = max(0.0, pensionable - maximum)
+    additional = float(t["additional_maximum_pensionable_earnings"])
+    width = max(0.0, additional - maximum)
+    # Construction groupée, comme pour les cotisations fédérales de l’annexe 8.
+    f.lines = {line.number: line for line in (
+        Line("10", "Cotisation au RRQ", withheld,
+             refs=("TP-1:98",)),
+        Line("11", "Part supplémentaire de la cotisation au RRQ", qpp.first_additional,
+             "ligne 10 × taux supplémentaire / (taux de base + taux supplémentaire), sans arrondi",
+             refs=("TP-1.D.U:10",),
+             params=("cotisations.qpp.base_rate", "cotisations.qpp.first_additional_rate")),
+        Line("12", "Salaire admissible au RRQ", salary,
+             "ligne 98.1 plafonnée au maximum des gains admissibles",
+             refs=("TP-1:98.1",),
+             params=("cotisations.qpp.maximum_pensionable_earnings",)),
+        Line("13", "Exemption personnelle au RRQ", exemption,
+             "montant annuel, sans prorata mensuel",
+             params=("cotisations.qpp.basic_exemption",)),
+        Line("14", "Montant de la ligne 12 moins celui de la ligne 13", earnings,
+             refs=("TP-1.D.U:12", "TP-1.D.U:13")),
+        Line("14.1", "Maximum des gains admissibles", maximum,
+             params=("cotisations.qpp.maximum_pensionable_earnings",)),
+        Line("14.2", "Montant de la ligne 13", exemption,
+             refs=("TP-1.D.U:13",)),
+        Line("14.3", "Montant de la ligne 14.1 moins celui de la ligne 14.2", ceiling,
+             refs=("TP-1.D.U:14.1", "TP-1.D.U:14.2")),
+        Line("14.4", "Moins élevé des montants des lignes 14 et 14.3", min(earnings, ceiling),
+             refs=("TP-1.D.U:14", "TP-1.D.U:14.3")),
+        Line("15", "Première cotisation supplémentaire maximale", qpp.first_additional,
+             refs=("TP-1.D.U:14.4",),
+             params=("cotisations.qpp.first_additional_rate",)),
+        Line("16", "Moins élevé des montants des lignes 11 et 15", qpp.first_additional,
+             refs=("TP-1.D.U:11", "TP-1.D.U:15")),
+        Line("17", "Cotisation au RRQ", withheld,
+             refs=("TP-1:98",)),
+        Line("17.1", "Montant de la ligne 14.4", min(earnings, ceiling),
+             refs=("TP-1.D.U:14.4",)),
+        Line("17.2", "Cotisation de base et première cotisation supplémentaire requises", qpp.base + qpp.first_additional,
+             "somme des deux composantes non arrondies",
+             refs=("TP-1.D.U:17.1",),
+             params=("cotisations.qpp.base_rate", "cotisations.qpp.first_additional_rate")),
+        Line("17.3", "Montant de la ligne 17 moins celui de la ligne 17.2", 0.0,
+             "retenues simulées égales aux cotisations requises",
+             refs=("TP-1.D.U:17", "TP-1.D.U:17.2")),
+        Line("17.4", "Cotisation supplémentaire au RRQ", qpp.second_additional,
+             refs=("TP-1:98.2",)),
+        Line("17.5", "Total des montants des lignes 17.3 et 17.4", qpp.second_additional,
+             refs=("TP-1.D.U:17.3", "TP-1.D.U:17.4")),
+        Line("18.5", "Salaire admissible au RRQ", pensionable,
+             refs=("TP-1:98.1",)),
+        Line("18.6", "Montant de la ligne 14.1", maximum,
+             refs=("TP-1.D.U:14.1",)),
+        Line("18.7", "Montant de la ligne 18.5 moins celui de la ligne 18.6", above,
+             refs=("TP-1.D.U:18.5", "TP-1.D.U:18.6")),
+        Line("18.8", "Maximum supplémentaire des gains admissibles", additional,
+             params=("cotisations.qpp.additional_maximum_pensionable_earnings",)),
+        Line("18.9", "Montant de la ligne 14.1", maximum,
+             refs=("TP-1.D.U:14.1",)),
+        Line("19", "Montant de la ligne 18.8 moins celui de la ligne 18.9", width,
+             refs=("TP-1.D.U:18.8", "TP-1.D.U:18.9")),
+        Line("20", "Moins élevé des montants des lignes 18.7 et 19", min(above, width),
+             refs=("TP-1.D.U:18.7", "TP-1.D.U:19")),
+        Line("21", "Deuxième cotisation supplémentaire maximale", qpp.second_additional,
+             refs=("TP-1.D.U:20",),
+             params=("cotisations.qpp.second_additional_rate",)),
+        Line("22", "Moins élevé des montants des lignes 17.5 et 21", qpp.second_additional,
+             refs=("TP-1.D.U:17.5", "TP-1.D.U:21")),
+        Line("22.1", "Montant de la ligne 16", qpp.first_additional,
+             refs=("TP-1.D.U:16",)),
+        Line("23", "Déduction pour cotisation au RRQ pour un revenu d'emploi", qpp.enhanced,
+             refs=("TP-1.D.U:22", "TP-1.D.U:22.1")),
+    )}
     return f

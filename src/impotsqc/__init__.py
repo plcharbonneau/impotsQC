@@ -23,7 +23,7 @@ from .model import Form, Line, Taxpayer, TaxReturn
 from .parameters import PROVISIONAL_STATUSES, load_parameters
 from .quebec import quebec_return
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = ["ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
            "compute", "compute_child_support", "load_parameters"]
 
@@ -53,7 +53,10 @@ def _warnings(tp: Taxpayer, params: dict, forms: dict[str, Form]) -> tuple[str, 
     out = []
     if params["quebec"]["drug_insurance"]["status"] in PROVISIONAL_STATUSES and quebec.amount("447") > 0:
         out.append(f"Ligne 447 (annexe K) : paramètres {tp.year} provisoires, non encore publiés.")
-    if tp.age >= 65 and tp.employment_income > 0:
+    if (tp.age == 18 or tp.age >= 73) and tp.employment_income > 0:
+        out.append("RRQ : prorata à 18 ans et fin des cotisations à 73 ans non modélisés; "
+                   "calcul annuel hérité conservé, annexes 8 et U non produites pour cet âge.")
+    if 65 <= tp.age < 73 and tp.employment_income > 0:
         out.append("RRQ : le choix de cesser de cotiser à 65 ans et plus n'est pas modélisé.")
     if "T691" in forms and forms["T691"].amount("P5-11") > 0:
         extra = forms["T691"].amount("P5-11")

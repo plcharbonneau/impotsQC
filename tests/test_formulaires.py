@@ -119,7 +119,7 @@ def test_formulaires_conditionnels(year):
     empty = compute(Taxpayer(year=year, age=40))
     assert set(empty.forms) == {"T1", "TP-1"}
     salary = compute(Taxpayer(year=year, age=40, employment_income=80_000))
-    assert set(salary.forms) == {"T1", "TP-1", "TP-1.D.K"}
+    assert set(salary.forms) == {"T1", "TP-1", "TP-1.D.K", "5005-S8", "TP-1.D.U"}
     gain = compute(Taxpayer(year=year, age=50, capital_gains=600_000))
     assert {"T691", "TP-776.42", "TP-1.D.E"} <= gain.forms.keys()
     assert gain.federal["41700"].refs == ("T1:40600", "T691:P1-103")

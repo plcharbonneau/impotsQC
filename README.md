@@ -4,8 +4,8 @@ Calcul des déclarations de revenus **fédérale (T1)** et **du Québec (TP-1)**
 et de la **pension alimentaire pour enfants** selon le modèle québécois, pour un script ou un agent. On décrit un contribuable fictif et on obtient chaque ligne des
 formulaires et annexes : montant, numéro de ligne officiel, libellé, et la règle appliquée.
 
-> **Statut : 0.3.0 (alpha).** Le T1, le TP-1 et leurs annexes sont des documents distincts,
-> accessibles par `r.forms`. Cette version change l'API, pas les montants de 0.2.0. Les règles
+> **Statut : 0.4.0 (alpha).** Les annexes 3 et 8 fédérales, G et U du Québec complètent les
+> documents accessibles par `r.forms`. Aucun montant existant de 0.3.0 ne change. Les règles
 > fiscales et leurs limites sont conservées; voir [PLAN.md](PLAN.md#points-dinterprétation).
 
 ## Portée
@@ -39,6 +39,9 @@ Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée 
 | Code | Document | Condition de présence |
 | --- | --- | --- |
 | `T1`, `TP-1` | Déclarations principales | Toujours |
+| `5000-S3`, `TP-1.D.G` | Gains en capital | Gain net positif fourni; total et inclusion seulement |
+| `5005-S8` | Cotisations au RRQ | Revenu d'emploi positif, 19 à 72 ans, hypothèse d'année complète |
+| `TP-1.D.U` | Déduction RRQ du salarié | Cotisation bonifiée positive, 19 à 72 ans |
 | `TP-1.D.B` | Allègements fiscaux | Âge admissible, personne vivant seule ou revenu de retraite |
 | `TP-1.D.F` | Cotisation au FSS | Revenu assujetti au-dessus du premier seuil |
 | `TP-1.D.K` | Assurance médicaments | Revenu net au-dessus de l'exemption, assurance publique annuelle présumée |
@@ -52,6 +55,30 @@ les clés distinguent les parties : `"P1-93"`, `"P5-11"`, `"P6-14"`; la partie 6
 que si l'impôt minimum dépasse l'impôt ordinaire. Pour l'annexe B, les lignes 1, 8 et 9 désignent
 la grille de retraite. La dernière ligne de l'annexe K est `"98"` (cotisation personnelle : `"90"`).
 
+Pour un salarié ayant réalisé un gain :
+
+```python
+r = compute(Taxpayer(year=2025, age=40, employment_income=80_000, capital_gains=20_000))
+r.forms["5000-S3"]["19900"].amount     # 10 000 $, repris au T1, ligne 12700
+r.forms["TP-1.D.G"]["108"].amount      # 10 000 $, repris au TP-1, ligne 139
+r.forms["5005-S8"]["P2-35"].amount     # crédit RRQ de base, repris au T1, ligne 30800
+r.forms["5005-S8"]["P2-47"].amount     # déduction RRQ bonifiée, reprise au T1, ligne 22215
+r.forms["TP-1.D.U"]["23"].amount       # même déduction, reprise au TP-1, ligne 248
+```
+
+Les annexes 3 et G commencent au gain net déjà fourni dans `capital_gains`. Elles ne ventilent
+pas les transactions, leurs prix de base, les provisions ou les catégories de biens. L'annexe 8
+utilise des clés `P1-A`, `P2-35`, etc., car la numérotation recommence à chaque partie. Les retenues
+RRQ sont simulées égales aux cotisations requises; les trop-perçus et choix de cessation ne sont
+pas calculés. À 18 ans ou dès 73 ans, les annexes 8 et U sont absentes et un avertissement signale
+la limite du calcul annuel hérité : **les montants historiques ne sont pas corrigés** par cette
+extraction. La ligne TP-1 `98.1` expose le salaire admissible simulé, plafonné au maximum supplémentaire.
+
+Les annexes fédérale 10 et québécoise R concernent notamment le travail autonome ou l'emploi
+hors Québec, situations encore hors portée. Elles ne sont pas ajoutées pour un salarié travaillant
+uniquement au Québec. Les [prochaines extensions](PLAN.md#prochains-formulaires) précisent les
+entrées manquantes.
+
 Chaque `Form` porte `code`, `title`, `version`, `source` et `lines`. Chaque `Line` porte son
 numéro, son libellé, son montant, sa règle, ses `refs` (`"CODE:ligne"`) et ses `params`
 (`"fichier.table.clé"`). Par exemple, `quebec.schedule_b.age` renvoie à
@@ -61,8 +88,8 @@ numéro, son libellé, son montant, sa règle, ses `refs` (`"CODE:ligne"`) et se
 `r.to_dict()` contient `year`, `taxpayer`, `forms`, `summary` et `warnings`. Chaque entrée de
 `forms` contient les métadonnées du document et un dictionnaire `lines`; chaque ligne contient
 `label`, `amount`, `rule`, `refs` et `params`. Les montants sont arrondis au cent dans le JSON
-seulement. Les clés historiques `federal` et `quebec` restent disponibles pendant la version 0.3
-comme dictionnaires de lignes. Les anciennes clés préfixées sont déplacées dans leurs annexes :
+seulement. Les clés historiques `federal` et `quebec` restent disponibles en 0.4
+comme dictionnaires de lignes; leur retrait est différé. Les anciennes clés préfixées sont déplacées dans leurs annexes :
 voir la [table de migration](CHANGELOG.md#030--2026-10-04).
 
 La numérotation et les versions des formulaires fiscaux sont celles de 2025. Pour l'année 2026,

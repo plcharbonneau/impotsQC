@@ -4,6 +4,32 @@ Versions selon SemVer. Une entrée **« change les résultats »** signale toute
 déplace un montant calculé pour une année déjà publiée; elle cite la source officielle qui la
 justifie.
 
+## 0.4.0 — 2026-10-04
+
+**Complète l'API, pas les montants.** Aucun taux, seuil ni montant de paramètre publié ne change.
+Aucune clé existante n'est renommée ou supprimée; les alias Python et JSON restent disponibles.
+Le retrait des alias JSON initialement annoncé après 0.3 est différé.
+
+- Ajout des formulaires `5000-S3` et `TP-1.D.G` pour le total net de gains en capital fourni et
+  son inclusion. Leurs lignes `19900` et `108` alimentent le T1 `12700` et le TP-1 `139`.
+  Les dispositions individuelles, catégories de biens et provisions ne sont pas reconstituées.
+- Ajout de `5005-S8` (parties 1 et 2) et `TP-1.D.U` (partie B) pour les cotisations RRQ d'un
+  salarié québécois de 19 à 72 ans, assujetti toute l'année. Les lignes `P2-35` et `P2-47` de
+  l'annexe 8 alimentent le T1 `30800` et `22215`; la ligne `23` de U alimente le TP-1 `248`.
+  Les retenues simulées égalent les cotisations requises; aucun trop-perçu n'est inventé.
+- Ajout de TP-1 `98.1`, salaire admissible simulé, source des calculs de l'annexe U.
+- Les métadonnées 2025/2026, les références et les paramètres cités suivent le modèle de 0.3.
+  Seules les parties couvertes sont construites. La construction groupée de l'annexe 8 limite
+  le coût des lignes supplémentaires, sans nouvelle dépendance ni classe de formulaire.
+- À 18 ans et dès 73 ans, les annexes RRQ sont omises et un avertissement explicite signale
+  les limites du calcul annuel hérité. **Aucune correction fiscale n'est appliquée.**
+- Tests : cas chiffrés des deux plafonds RRQ, reports exacts, absence des formulaires non
+  applicables, métadonnées, références et JSON. Comparaison exacte de 2 049 déclarations
+  fictives avec 0.3.0 : 320 044 montants de lignes et tous les totaux inchangés. Suite complète :
+  313 tests réussis avec l'oracle local; 211 réussis et 22 sautés sans les relevés locaux.
+- Performance : 35,994 µs pour le salarié type, contre 24,414 µs en 0.3.0; surcoût maximal
+  mesuré de 1,47× sur les cinq profils. Protocole et résultats détaillés dans `PLAN.md`.
+
 ## 0.3.0 — 2026-10-04
 
 **Change l'API, pas les montants.** Aucun fichier de paramètres fiscaux déjà publié n'est modifié.

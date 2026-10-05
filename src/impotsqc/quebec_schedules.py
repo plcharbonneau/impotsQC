@@ -11,67 +11,95 @@ Une fonction rend None avant de construire un formulaire qui ne s'applique pas.
 from __future__ import annotations
 
 from . import rules
-from .model import Form, Line, Taxpayer
+from .model import Form, Line, Taxpayer, TaxReturn
 
 
-def schedule_b(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
-    """Annexe B : montants personnels d'âge et de retraite, réduction selon le revenu familial.
+def schedule_b(tp: Taxpayer, params: dict, quebec: Form, *,
+               spouse: TaxReturn | None = None, share: float = 1.0) -> Form | None:
+    """Annexe B : droits individuels ou communs, réduction familiale et répartition.
 
-    Les droits du conjoint et la répartition du montant entre conjoints restent hors portée;
-    un avertissement de `compute` signale cette limite pour les couples."""
+    Le calcul coordonné fournit les revenus déjà établis du conjoint. La réduction s’applique
+    au total des droits, avant le partage. Les clés 1.C, 8.C et 9.C désignent la colonne conjoint
+    de la grille de retraite; les clés historiques 1, 8 et 9 désignent la colonne du déclarant.
+    """
     t = params["quebec"]["schedule_b"]
     retirement = quebec.amount("122")
-    if not (tp.lives_alone or tp.age >= t["minimum_age"] or retirement > 0):
+    partner = spouse.taxpayer if spouse is not None else None
+    partner_retirement = spouse.quebec.amount("122") if spouse is not None else 0.0
+    own_right = tp.lives_alone or tp.age >= t["minimum_age"] or retirement > 0
+    partner_right = partner is not None and (
+        partner.lives_alone or partner.age >= t["minimum_age"] or partner_retirement > 0)
+    if not (own_right or partner_right):
         return None
     f = Form.from_parameters("TP-1.D.B", params)
-    net = f.add("10", "Revenu net", quebec.amount("275"),
-                refs=("TP-1:275",))
+    net = f.add("10", "Revenu net", quebec.amount("275"), refs=("TP-1:275",))
     family_income = net
     family_refs = ("TP-1.D.B:10",)
     if tp.has_spouse:
         family_income += f.add("12", "Revenu net du conjoint", tp.spouse_net_income,
-                               "ligne 275 du TP-1 du conjoint, fournie par l'appelant")
+            "ligne 275 du TP-1 du conjoint; lien dans CoupleReturn.refs" if spouse is not None
+            else "ligne 275 du TP-1 du conjoint, fournie par l'appelant")
         family_refs += ("TP-1.D.B:12",)
     f.add("14", "Revenu familial", family_income, refs=family_refs)
-    f.add("15", "Revenu familial", family_income,
-          refs=("TP-1.D.B:14",))
+    f.add("15", "Revenu familial", family_income, refs=("TP-1.D.B:14",))
     threshold = f.add("16", "Seuil de réduction", t["reduction_threshold"],
                       params=("quebec.schedule_b.reduction_threshold",))
     excess = f.add("18", "Revenu familial excédant le seuil", max(0.0, family_income - threshold),
                    refs=("TP-1.D.B:15", "TP-1.D.B:16"))
-    alone = f.add("20", "Montant pour personne vivant seule", t["living_alone"] if tp.lives_alone else 0.0,
+    alone_count = int(tp.lives_alone) + (int(partner.lives_alone) if partner is not None else 0)
+    alone = f.add("20", "Montant pour personne vivant seule", t["living_alone"] * alone_count,
+                  "admissibilité confirmée pour chaque personne; total commun en cas de séparation involontaire",
                   params=("quebec.schedule_b.living_alone",))
     age = f.add("22", "Montant accordé en raison de l'âge", t["age"] if tp.age >= t["minimum_age"] else 0.0,
                 params=("quebec.schedule_b.age", "quebec.schedule_b.minimum_age"))
-    pension = 0.0
-    if retirement > 0:
-        f.add("1", "Revenus de retraite", retirement, "grille de calcul, lignes 122 et 123 dans la portée",
-              refs=("TP-1:122",))
-        f.add("8", "Revenus de retraite admissibles", retirement, "aucun transfert ni déduction visée",
-              refs=("TP-1.D.B:1",))
-        pension = f.add("9", "Montant pour revenus de retraite",
-                        min(t["retirement_income_factor"] * retirement, t["retirement_income_maximum"]),
-                        "grille : ligne 8 × facteur, plafonné",
-                        refs=("TP-1.D.B:8",),
-                        params=(
-                            "quebec.schedule_b.retirement_income_factor",
-                            "quebec.schedule_b.retirement_income_maximum",
-                        ))
+    partner_age = 0.0
+    if partner is not None:
+        partner_age = f.add("23", "Montant accordé en raison de l'âge à votre conjoint",
+                            t["age"] if partner.age >= t["minimum_age"] else 0.0,
+                            params=("quebec.schedule_b.age", "quebec.schedule_b.minimum_age"))
+    pension = _retirement_grid(f, t, retirement)
     f.add("27", "Montant pour revenus de retraite", pension,
           refs=("TP-1.D.B:9",) if retirement > 0 else ())
-    f.add("30", "Total des montants", alone + age + pension,
-          refs=("TP-1.D.B:20", "TP-1.D.B:22", "TP-1.D.B:27"))
-    f.add("31", "Réduction selon le revenu familial", t["reduction_rate"] * excess,
-          refs=("TP-1.D.B:18",),
-          params=("quebec.schedule_b.reduction_rate",))
-    amount = rules.schedule_b_amount(age=tp.age, lives_alone=tp.lives_alone, retirement_income=retirement,
-                                     family_income=family_income, table=t)
-    f.add("32", "Montant auquel vous avez droit", amount, "ligne 30 − ligne 31, minimum zéro",
-          refs=("TP-1.D.B:30", "TP-1.D.B:31"))
+    total = alone + age + pension
+    total_refs = ("TP-1.D.B:20", "TP-1.D.B:22", "TP-1.D.B:27")
+    if partner is not None:
+        partner_pension = _retirement_grid(f, t, partner_retirement, spouse=True)
+        f.add("28", "Montant pour revenus de retraite de votre conjoint", partner_pension,
+              refs=("TP-1.D.B:9.C",) if partner_retirement > 0 else ())
+        total = alone + (age + partner_age) + (pension + partner_pension)
+        total_refs += ("TP-1.D.B:23", "TP-1.D.B:28")
+    f.add("30", "Total des montants", total, refs=total_refs)
+    reduction = f.add("31", "Réduction selon le revenu familial", t["reduction_rate"] * excess,
+                      refs=("TP-1.D.B:18",), params=("quebec.schedule_b.reduction_rate",))
+    amount = f.add("32", "Montant auquel vous avez droit", max(0.0, total - reduction),
+                   "ligne 30 − ligne 31, minimum zéro", refs=("TP-1.D.B:30", "TP-1.D.B:31"))
+    final_refs = ("TP-1.D.B:32",)
+    if spouse is not None:
+        other = f.add("33", "Montant demandé par votre conjoint à la ligne 361 de sa déclaration",
+                      amount * (1 - share), "partage choisi du montant commun; aucun second abattement familial",
+                      refs=("TP-1.D.B:32",))
+        amount -= other
+        final_refs += ("TP-1.D.B:33",)
     f.add("34", "Montant accordé en raison de l'âge ou pour personne vivant seule ou pour revenus de retraite",
-          amount, "sans montant demandé par un conjoint",
-          refs=("TP-1.D.B:32",))
+          amount, "ligne 32 moins ligne 33" if spouse is not None else "sans montant demandé par un conjoint",
+          refs=final_refs)
     return f
+
+
+def _retirement_grid(form: Form, table: dict, income: float, *, spouse: bool = False) -> float:
+    """Remplit une colonne de la grille de retraite seulement si un revenu admissible existe."""
+    if income <= 0:
+        return 0.0
+    suffix = ".C" if spouse else ""
+    form.add("1" + suffix, "Revenus de retraite", income,
+             "ligne 122 du conjoint; lien dans CoupleReturn.refs" if spouse else "ligne 122 du déclarant",
+             refs=() if spouse else ("TP-1:122",))
+    form.add("8" + suffix, "Revenus de retraite admissibles", income, "aucun transfert ni déduction visée",
+             refs=("TP-1.D.B:1" + suffix,))
+    return form.add("9" + suffix, "Montant pour revenus de retraite",
+                    min(table["retirement_income_factor"] * income, table["retirement_income_maximum"]),
+                    "grille : ligne 8 × facteur, plafonné", refs=("TP-1.D.B:8" + suffix,),
+                    params=("quebec.schedule_b.retirement_income_factor", "quebec.schedule_b.retirement_income_maximum"))
 
 
 def schedule_f(params: dict, quebec: Form, *, ei_repayment: float = 0.0,

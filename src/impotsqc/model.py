@@ -26,9 +26,12 @@ class Taxpayer:
       base ou autre exemption confirmée; `()` signifie aucune exemption, `None` signifie inconnu;
     - `drug_plan_dependent_children` : enfants à charge admissibles à l'annexe K, zéro à confirmer.
 
+    `lives_alone` confirme l’admissibilité annuelle au montant pour personne vivant seule,
+    et non simplement l’absence d’un conjoint dans l’habitation au 31 décembre.
     Les questions manquantes sont exposées par `required_questions`; `compute` les exige avant
-    de produire un total. Chaque conjoint paie sa propre cotisation RAMQ. Les crédits et transferts
-    entre conjoints restent hors portée et sont signalés dans les avertissements.
+    de produire un total. `compute_couple` coordonne les revenus et le partage de l’annexe B;
+    les autres crédits/transferts entre conjoints restent signalés hors portée. Chaque conjoint
+    paie sa propre cotisation RAMQ.
     """
 
     year: int
@@ -197,3 +200,29 @@ class TaxReturn:
                         ("federal_payable", "quebec_payable", "payroll_contributions", "total_payable")},
             "warnings": list(self.warnings),
         }
+
+
+@dataclass(frozen=True)
+class CoupleReturn:
+    """Deux déclarations coordonnées, avec les liens entre personnes séparés des liens locaux.
+
+    Les clés de `refs` sont de la forme `first/TP-1.D.B:12`; elles désignent les lignes qui
+    consultent la déclaration `first` ou `second`. Chaque `TaxReturn` conserve ses codes
+    officiels et ses références locales `CODE:ligne`.
+    """
+
+    first: TaxReturn
+    second: TaxReturn
+    refs: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+    @property
+    def total_payable(self) -> float:
+        """Somme des impôts et cotisations des deux déclarations, dans la portée calculée."""
+        return self.first.total_payable + self.second.total_payable
+
+    def to_dict(self) -> dict:
+        """Sérialise les deux déclarations et les dépendances entre conjoints en JSON simple."""
+        return {"year": self.first.taxpayer.year,
+                "first": self.first.to_dict(), "second": self.second.to_dict(),
+                "refs": {key: list(values) for key, values in self.refs.items()},
+                "summary": {"total_payable": round(self.total_payable, 2)}}

@@ -340,3 +340,50 @@ Mesure appariée de la version 0.5 (`main` 226de1f) et du code 0.6 en préparati
 Le profil salarié est à 1,60× la référence historique 0.3 (23,531 µs), légèrement au-dessus
 de la cible approximative de 1,5×. Cette cible et le mode rapide A03 restent ouverts dans le
 registre; la faible variation par rapport à 0.5 ne vaut pas validation de la contrainte globale.
+
+
+## Coordination des conjoints : annexe B (0.6.0 en préparation)
+
+`compute_couple` remplit les revenus des deux personnes avant les crédits québécois. Les deux
+phases du TP-1 sont communes à `compute` et `compute_couple`; il n'y a ni formule fiscale copiée
+pour les couples ni calcul préalable de déclarations jetables. Le revenu du conjoint provient
+de son TP-1:275 et remplace la saisie manuelle après vérification d'une éventuelle valeur fournie.
+
+L'annexe B réunit les montants d'âge, de retraite et de personne vivant seule admissibles des
+deux contribuables. La réduction familiale s'applique au total avant sa répartition. La même
+ligne 32 figure dans les deux annexes; leurs lignes 34 totalisent ce montant. Le choix par défaut
+est un partage égal, modifiable par `schedule_b_first_share`, sans optimisation automatique.
+Sources : [annexe B 2025](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf)
+et [guide, ligne 361](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-361/).
+
+`CoupleReturn.refs` porte les dépendances d'une personne vers l'autre. Elles sont séparées des
+références locales de `Line`, ce qui préserve les codes officiels et le contrat de `TaxReturn`.
+Les montants d'allocation sont calculés à partir du droit commun et du choix, sans lien réciproque
+cyclique. Les liens d'entrée vers les revenus du conjoint se résolvent dans les deux déclarations.
+
+Cette étape couvre Q02 en partie et les droits/partages de Q03. Les montants fédéraux pour
+conjoint, transferts des annexes 2/5/A, TP-1:431, supplément monoparental et fractionnement
+restent explicitement dans le registre; le total des couples reçoit un avertissement d'incomplétude.
+
+Validation : 469 tests réussis, dont 31 nouveaux cas de couples; sans données locales ignorées,
+367 réussis et 22 sautés. Montants 2025 indépendants, conservation du montant
+familial, symétrie, questions, revenus incohérents, métadonnées, graphe acyclique et JSON.
+Comparaison exacte à 91050c9 : 600 contribuables fictifs, 128 124 montants et tous les totaux
+historiques de `compute` inchangés. Aucun paramètre ni montant attendu historique modifié.
+
+Python 3.14.3, `timeit`, paramètres chauds, entrées préconstruites, médiane de 7 × 10 000 appels,
+benchmark individuel avant/après cette étape (avant : 91050c9) :
+
+| Profil | Avant (µs) | Après (µs) | Rapport |
+| --- | ---: | ---: | ---: |
+| Salarié | 36,833 | 37,918 | 1,029× |
+| Retraité | 34,348 | 34,494 | 1,004× |
+| Prolongation de carrière | 44,123 | 44,987 | 1,020× |
+| Gain en capital | 42,756 | 43,576 | 1,019× |
+| Sans revenu | 20,498 | 20,767 | 1,013× |
+
+La référence 0.3 reste 23,531 µs pour le salarié : environ 1,61× à ce stade. L'objectif historique
+de coût approximatif de 1,5× reste ouvert dans A03; ce tableau ne remplace pas cette référence.
+
+Le couple retraité de l’exemple README (deux FERR de 25 000 $, 66 et 67 ans, couverture privée
+annuelle) prend 95,456 µs pour les deux déclarations coordonnées, selon le même protocole.

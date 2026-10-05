@@ -11,12 +11,19 @@ la base imposable signée et les rajouts propres au Québec, dans des formulaire
 from __future__ import annotations
 
 from . import quebec_schedules, rules
-from .model import Form, Taxpayer
+from .model import Form, Taxpayer, TaxReturn
 from .rules import QppContributions
 
 
 def quebec_return(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayment: float, *, forms: dict[str, Form]) -> Form:
     """Remplit le TP-1 de `tp`. `oas_repayment` : ligne 23500 du T1 (déduite à la ligne 250)."""
+    quebec_income(tp, params, qpp, oas_repayment, forms=forms)
+    return quebec_tax(tp, params, forms=forms)
+
+
+def quebec_income(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayment: float, *,
+                  forms: dict[str, Form]) -> Form:
+    """Remplit les revenus et déductions du TP-1 avant les crédits dépendant du ménage."""
     qc, cot = params["quebec"], params["cotisations"]
     f = Form.from_parameters("TP-1", params)
     forms[f.code] = f
@@ -146,6 +153,21 @@ def quebec_return(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
         taxable_refs += ("TP-1:295",)
     taxable = f.add("299", "Revenu imposable", max(0.0, net - non_taxable), refs=taxable_refs)
 
+    return f
+
+
+def quebec_tax(tp: Taxpayer, params: dict, *, forms: dict[str, Form],
+               spouse: TaxReturn | None = None, schedule_b_share: float = 1.0) -> Form:
+    """Complète une déclaration dont les revenus sont connus, avec l’annexe B du ménage."""
+    qc = params["quebec"]
+    f = forms["TP-1"]
+    taxable = f.amount("299")
+    eligible, other = rules.grossed_up_dividends(tp.eligible_dividends, tp.other_dividends, qc["dividends"])
+    benefits = tp.benefits
+    benefit_repayments = benefits.ei_repaid + benefits.qpip_repaid if benefits is not None else 0.0
+    worksheet = forms.get("5000-D1")
+    ei_repayment = worksheet.amount("23500-7") if worksheet is not None else 0.0
+
     # Crédits d'impôt non remboursables
     base = f.add("350", "Montant personnel de base", qc["basic_personal_amount"]["amount"],
                  params=("quebec.basic_personal_amount.amount",))
@@ -156,7 +178,7 @@ def quebec_return(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
         base = f.add("359", "Montant de la ligne 350 moins celui de la ligne 358", max(0.0, base - adjustment),
                      "minimum zéro", refs=("TP-1:350", "TP-1:358"))
         base_ref = "TP-1:359"
-    annex_b = quebec_schedules.schedule_b(tp, params, f)
+    annex_b = quebec_schedules.schedule_b(tp, params, f, spouse=spouse, share=schedule_b_share)
     if annex_b is not None:
         forms[annex_b.code] = annex_b
     schedule_b = f.add("361", "Montant accordé en raison de l'âge ou pour personne vivant seule ou pour revenus de retraite",

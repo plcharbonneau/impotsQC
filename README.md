@@ -20,7 +20,9 @@ formulaires et annexes : montant, numéro de ligne officiel, libellé, et la rè
   syndicales/professionnelles : déduction fédérale et crédit québécois distincts.
 - Assurance médicaments : personne avec ou sans conjoint fiscal, revenu net du conjoint,
   enfants admissibles et mois exemptés confirmés. Chaque personne paie sa propre cotisation.
-- Hors portée pour l'instant : travail autonome, crédits et transferts entre conjoints,
+- Couples : `compute_couple` calcule les revenus nets des deux personnes, les réutilise pour
+  la RAMQ et met en commun les droits d'âge/retraite/vivre seul de l'annexe B avant partage.
+- Hors portée pour l'instant : travail autonome, autres crédits et transferts entre conjoints,
   fractionnement de pension, crédits pour enfants, frais médicaux, dons, crédits remboursables,
   acomptes provisionnels. Le calcul global d'un couple reste incomplet et porte un avertissement.
 
@@ -42,6 +44,37 @@ r.to_dict()                    # JSON, pour un agent
 ```
 
 `r.federal` et `r.quebec` restent des alias de `r.forms["T1"]` et `r.forms["TP-1"]`.
+
+Pour coordonner deux contribuables fictifs, sans ressaisir le revenu du conjoint :
+
+```python
+from impotsqc import Taxpayer, compute_couple, required_couple_questions
+
+first = Taxpayer(year=2025, age=66, rrif_income=25_000, has_spouse=True,
+                 drug_plan_exempt_months=tuple(range(1, 13)))
+second = Taxpayer(year=2025, age=67, rrif_income=25_000, has_spouse=True,
+                  drug_plan_exempt_months=tuple(range(1, 13)))
+required_couple_questions(first, second)   # {} : revenus du conjoint calculés, couverture confirmée
+couple = compute_couple(first, second, schedule_b_first_share=0.75)
+couple.first.forms["TP-1.D.B"]["34"].amount    # 9 951,65625 $, avant arrondi d'affichage
+couple.second.forms["TP-1.D.B"]["34"].amount   # 3 317,21875 $
+couple.refs["first/TP-1.D.B:12"]              # ("second/TP-1:275",)
+couple.to_dict()                             # deux déclarations et liens interpersonnels
+```
+
+Le partage par défaut est de 50 % chacun; `schedule_b_first_share` permet de choisir de 0 à 1.
+Ce choix n'est pas une optimisation. Les lignes 23 et 28 de B exposent les droits du conjoint;
+33 indique la part demandée par l'autre personne. Les clés `1.C`, `8.C`, `9.C` désignent la
+colonne « conjoint » de la grille de retraite; `1`, `8`, `9` restent la colonne du déclarant.
+`lives_alone=True` confirme l'admissibilité fiscale annuelle, y compris la situation particulière
+admissible de conjoints séparés involontairement; le statut conjugal reste une réponse distincte.
+
+Les `Line.refs` restent locaux à chaque déclaration. `CoupleReturn.refs` ajoute les liens entre
+personnes au format `first/CODE:ligne` et `second/CODE:ligne`, sans inventer de codes de formulaire.
+Un revenu du conjoint déjà saisi est vérifié au cent, puis remplacé par le montant calculé non
+arrondi. Le montant fédéral pour conjoint, les transferts de crédits inutilisés et le fractionnement
+restent à faire : les avertissements des deux déclarations indiquent cette limite du total.
+
 Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée du moteur :
 
 | Code | Document | Condition de présence |
@@ -51,7 +84,7 @@ Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée 
 | `5000-S3`, `TP-1.D.G` | Gains en capital | Gain net positif fourni; total et inclusion seulement |
 | `5005-S8` | Cotisations au RRQ | Revenu d'emploi positif, 19 à 72 ans, hypothèse d'année complète |
 | `TP-1.D.U` | Déduction RRQ du salarié | Cotisation bonifiée positive, 19 à 72 ans |
-| `TP-1.D.B` | Allègements fiscaux | Âge admissible, personne vivant seule ou revenu de retraite |
+| `TP-1.D.B` | Allègements fiscaux | Âge admissible, personne vivant seule ou revenu de retraite; droits du conjoint inclus avec `compute_couple` |
 | `TP-1.D.F` | Cotisation au FSS | Revenu assujetti au-dessus du premier seuil |
 | `TP-1.D.K` | Assurance médicaments | Revenu familial au-dessus de l'exemption de base et au moins un mois non exempté |
 | `TP-752.PC` | Prolongation de carrière | 65 ans et plus et revenu de travail positif |

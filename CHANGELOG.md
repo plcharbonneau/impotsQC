@@ -44,6 +44,20 @@ traités conformément aux sources officielles.
 - Validation de cette étape : 437 tests réussis; sans oracle, 335 réussis et 22 sautés.
   Salarié : 36,512 → 37,596 µs (+3,0 %); retraité : 31,974 → 34,936 µs (+9,3 %).
   Mesure appariée, détails et contrainte historique encore à satisfaire dans `PLAN.md`.
+- Ajout de `compute_couple`, `required_couple_questions` et `CoupleReturn` : deux revenus
+  calculés avant les crédits, revenu net du conjoint transmis à B/K, droits de B réunis puis
+  répartis. Le partage par défaut est égal et peut être choisi explicitement. Les questions
+  restent propres à chaque personne; aucun statut ou mois exempté n'est présumé.
+  **Change les résultats pour les couples utilisant cette nouvelle API**, puisque les droits
+  des deux personnes sont réduits ensemble une seule fois. `compute` conserve ses montants.
+  Sources : [annexe B 2025, lignes 23/28/33/34](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf)
+  et [guide, ligne 361](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-361/).
+- Nouvelles lignes B `1.C`, `8.C`, `9.C` pour la colonne conjoint, sans renommer les clés de la
+  colonne du déclarant. `CoupleReturn.refs` relie les déclarations; `Line.refs` reste local.
+  Les autres crédits/transferts et le fractionnement restent signalés comme non calculés.
+- Coordination : 469 tests réussis, dont 31 nouveaux; sans données locales, 367 réussis et
+  22 sautés. Comparaison exacte de 600 profils et 128 124 montants
+  historiques. Salarié : 36,833 → 37,918 µs (1,029×). Aucun paramètre existant modifié.
 - La portée complète demandée et les éléments encore à faire figurent dans `IMPLEMENTATION.md`.
 
 ## 0.5.0 — 2026-10-04

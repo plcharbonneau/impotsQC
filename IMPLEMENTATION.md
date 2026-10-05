@@ -28,8 +28,8 @@ aux autres provinces ne sont pas à réintroduire pour 2025/2026.
 | D03 | CELIAPP : annexe 15, droits, cotisations, transferts et retraits | À implémenter |
 | D04 | Intérêts/frais financiers, annexe N, rajustements et reports | À implémenter |
 | Q01 | Questionnaire familial : dates/statuts, vivre seul, personnes à charge et garde partagée | À implémenter |
-| Q02 | Deux déclarations coordonnées; crédits conjoint/personnes à charge, annexes 2/5/A | À implémenter |
-| Q03 | Annexe B : droits du conjoint, répartition, supplément monoparental | À implémenter |
+| Q02 | Deux déclarations coordonnées; crédits conjoint/personnes à charge, annexes 2/5/A | Revenus et RAMQ coordonnés avec compute_couple; crédits et transferts 2/5/A à implémenter |
+| Q03 | Annexe B : droits du conjoint, répartition, supplément monoparental | Droits des deux conjoints et partage implémentés; supplément monoparental et admissibilité détaillée à compléter |
 | Q04 | T1032 et annexe Q : fractionnement, revenus admissibles, choix distincts par régime | À implémenter |
 | Q05 | Annexe K : détermination des exemptions mensuelles et paiement de la prime du conjoint | À implémenter |
 | C01 | RRQ : choix de cessation, prorata à 18 ans, arrêt après 72 ans, retenues/trop-perçus réels | À implémenter |
@@ -154,3 +154,19 @@ Les priorités ordonnent la réalisation et ne retranchent aucun élément du re
   La cible globale historique reste ouverte (salarié 1,60× la référence 0.3).
 - Prochaine étape : Q01/Q02/Q03, questionnaire familial et déclarations coordonnées, puis Q04.
   Le registre complet conserve les autres formulaires à implémenter; cette étape ne le clôt pas.
+
+
+## Étape coordination des conjoints et annexe B
+
+- `compute_couple` calcule d'abord les deux revenus, puis les crédits, dans les mêmes objets
+  Form. Aucun revenu du conjoint présumé nul ni déclaration provisoire n'est construit.
+- B : montants communs des deux personnes, une seule réduction familiale, partage explicite
+  (50 % par défaut); RAMQ : revenus automatiquement croisés, chaque personne paie sa prime.
+- Références interpersonnelles dans `CoupleReturn.refs`; références locales inchangées.
+- Cette étape ne clôt pas Q02/Q03 : les annexes fédérales 2/5, l'annexe A, les crédits inutilisés
+  au TP-1:431, le supplément monoparental et le fractionnement restent à calculer.
+- 469 tests réussis (dont 31 nouveaux cas de couples); sans données locales, 367 réussis et
+  22 sautés. 600 profils historiques, 128 124 montants et tous les totaux
+  de `compute` strictement identiques au commit 91050c9. Aucun paramètre numérique changé.
+- Performance du calcul individuel : salarié 36,833 → 37,918 µs (1,029×). La cible historique
+  reste ouverte; protocole et cinq profils dans PLAN.md.

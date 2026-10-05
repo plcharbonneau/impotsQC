@@ -119,3 +119,17 @@ version = "2025"
 source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s5/5000-s5-25f.pdf"
 ref = "Annexe 5, sections 30300 et 30425; numéros récurrents préfixés par la section"
 status = "rule_2025"
+
+["T1032"]
+title = "Choix conjoint visant le fractionnement du revenu de pension"
+version = "2025"
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t1032/t1032-25f.pdf"
+ref = "Étapes 2 à 5; pensions RPA, rentes REER et FERR; prorata, crédits et retenues"
+status = "rule_2025"
+
+["TP-1.D.Q"]
+title = "Revenus de retraite transférés à votre conjoint au 31 décembre"
+version = "2025-12"
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.Q%282025-12%29.pdf"
+ref = "Annexe Q, parties A et B; copie dans la seule déclaration du cédant"
+status = "rule_2025"

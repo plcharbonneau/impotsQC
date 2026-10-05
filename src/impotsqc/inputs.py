@@ -106,6 +106,64 @@ class Deductions:
 
 
 @dataclass(frozen=True)
+class TaxPayments:
+    """Retenues d'impôt et acomptes réellement payés, hors cotisations RRQ/AE/RQAP.
+
+    Les quatre montants doivent être confirmés, y compris zéro. Les retenues sont les totaux
+    initiaux des relevés, avant tout transfert de pension; la part admissible au transfert
+    est déclarée séparément dans PensionSplit. Aucun solde de déclaration n'est estimé
+    lorsque cet objet est absent.
+    """
+
+    federal_withheld: float
+    quebec_withheld: float
+    federal_instalments: float
+    quebec_instalments: float
+
+    def __post_init__(self) -> None:
+        """Vérifie les montants payés sans inventer de retenue ou d'acompte."""
+        validate_amounts(self)
+
+
+@dataclass(frozen=True)
+class PensionSplit:
+    """Choix conjoint de transférer un montant de pension dans un régime fiscal.
+
+    `donor` vaut first ou second. `eligible` confirme les conditions du régime et le choix
+    conjoint. `tax_withheld` est l'impôt de ce régime retenu sur les seules pensions
+    admissibles, après ventilation des feuillets mixtes. Pour le T1032, les mois de mariage
+    ou d'union de fait et les mois de l'année fiscale (12, sauf décès) sont requis.
+    `same_year_survivor_pension` est la part des FERR/rentes REER du cédant reçue à la suite
+    du décès d'un conjoint survenu pendant l'année fiscale; elle est demandée lorsque la
+    note 1 du T1032 peut modifier le crédit du bénéficiaire de moins de 65 ans.
+    None indique une information à demander; aucun montant optimal n'est présumé.
+    """
+
+    donor: str
+    amount: float
+    eligible: bool | None = None
+    tax_withheld: float | None = None
+    months_as_spouses: int | None = None
+    tax_year_months: int | None = None
+    same_year_survivor_pension: float | None = None
+
+    def __post_init__(self) -> None:
+        """Valide le montant, les réponses et les mois du choix de fractionnement."""
+        validate_amounts(self)
+        if self.donor not in ("first", "second"):
+            raise ValueError("donor doit être first ou second")
+        if self.eligible is not None and type(self.eligible) is not bool:
+            raise ValueError("eligible doit être True, False ou None")
+        for name in ("months_as_spouses", "tax_year_months"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or not 1 <= value <= 12):
+                raise ValueError(f"{name} doit être un entier de 1 à 12 ou None")
+        if (self.months_as_spouses is not None and self.tax_year_months is not None
+                and self.months_as_spouses > self.tax_year_months):
+            raise ValueError("les mois comme conjoints dépassent les mois de l'année fiscale")
+
+
+@dataclass(frozen=True)
 class CoupleOptions:
     """Admissibilité et choix de crédits entre les deux déclarants d’un couple.
 
@@ -120,9 +178,15 @@ class CoupleOptions:
     spouse_caregiver: bool | None = None
     federal_transfers: bool | None = None
     transfer_unused_quebec: bool = True
+    federal_pension_split: PensionSplit | None = None
+    quebec_pension_split: PensionSplit | None = None
 
     def __post_init__(self) -> None:
         """Valide les réponses sans assimiler une absence de réponse à une inadmissibilité."""
+        for name in ("federal_pension_split", "quebec_pension_split"):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, PensionSplit):
+                raise ValueError(f"{name} doit être un objet PensionSplit ou None")
         if self.spouse_amount_claimant not in (None, "first", "second", "neither"):
             raise ValueError("spouse_amount_claimant doit être first, second, neither ou None")
         for name in ("spouse_caregiver", "federal_transfers"):

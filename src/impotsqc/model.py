@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from math import isfinite
 from typing import NamedTuple
 
-from .inputs import Benefits, CoupleOptions, Deductions, PensionIncome, validate_amounts
+from .inputs import Benefits, CoupleOptions, Deductions, PensionIncome, TaxPayments, validate_amounts
 
 
 @dataclass(frozen=True)
@@ -49,6 +49,7 @@ class Taxpayer:
     pensions: tuple[PensionIncome, ...] = ()
     benefits: Benefits | None = None
     deductions: Deductions | None = None
+    payments: TaxPayments | None = None
     lives_alone: bool = False
     has_spouse: bool | None = None
     spouse_net_income: float | None = None
@@ -60,6 +61,8 @@ class Taxpayer:
         if not 18 <= self.age <= 120:
             raise ValueError(f"âge hors de [18, 120] : {self.age}")
         validate_amounts(self)
+        if self.payments is not None and not isinstance(self.payments, TaxPayments):
+            raise ValueError("payments doit être un objet TaxPayments")
         if self.benefits is not None and not isinstance(self.benefits, Benefits):
             raise ValueError("benefits doit être un objet Benefits")
         if self.deductions is not None and not isinstance(self.deductions, Deductions):
@@ -186,9 +189,24 @@ class TaxReturn:
         """Impôts fédéral et du Québec, cotisations sociales comprises."""
         return self.federal_payable + self.quebec_payable + self.payroll_contributions
 
+    @property
+    def federal_balance(self) -> float | None:
+        """Solde fédéral signé après retenues et acomptes; négatif pour un remboursement, None si inconnu."""
+        return self.federal.amount("172") if "172" in self.federal.lines else None
+
+    @property
+    def quebec_balance(self) -> float | None:
+        """Solde québécois signé après retenues et acomptes; négatif pour un remboursement, None si inconnu."""
+        return self.quebec.amount("470") if "470" in self.quebec.lines else None
+
     def to_dict(self) -> dict:
         """Déclaration complète en JSON simple, pour un script ou un agent."""
         forms = {code: form.to_dict() for code, form in self.forms.items()}
+        summary = {k: round(getattr(self, k), 2) for k in
+                   ("federal_payable", "quebec_payable", "payroll_contributions", "total_payable")}
+        if self.federal_balance is not None:
+            summary["federal_balance"] = round(self.federal_balance, 2)
+            summary["quebec_balance"] = round(self.quebec_balance, 2)
         return {
             "year": self.taxpayer.year,
             "taxpayer": asdict(self.taxpayer),
@@ -196,8 +214,7 @@ class TaxReturn:
             # Compatibilité 0.3 : les deux dictionnaires de lignes historiques restent disponibles.
             "federal": forms["T1"]["lines"],
             "quebec": forms["TP-1"]["lines"],
-            "summary": {k: round(getattr(self, k), 2) for k in
-                        ("federal_payable", "quebec_payable", "payroll_contributions", "total_payable")},
+            "summary": summary,
             "warnings": list(self.warnings),
         }
 

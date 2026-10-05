@@ -111,3 +111,10 @@ rate = 0.10
 source = "https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-397/"
 ref = "Lignes 397.1 et 397 : 10 % des cotisations syndicales, professionnelles ou autres admissibles, après exclusion des taxes remboursables"
 status = "published"
+
+[pension_split]
+maximum_fraction = 0.50
+minimum_age = 65
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.Q%282025-12%29.pdf"
+ref = "Annexe Q, lignes 10 à 22 et 50 à 58; cédant de 65 ans ou plus"
+status = "published"

@@ -445,3 +445,67 @@ ouverts, sans déplacement de la référence historique.
 Le calcul coordonné de deux FERR de 25 000 $ (66 et 67 ans, 2025, assurance privée annuelle,
 partage égal de B, transferts fédéraux confirmés) prend 111,817 µs pour les deux déclarations,
 selon le même protocole. Le lot précédent, qui ne calculait pas ces transferts, prenait 95,456 µs.
+
+
+## Fractionnement et retenues de pension (0.6.0 en préparation, 2026-10-05)
+
+Les choix fédéral et québécois sont deux données `PensionSplit` distinctes. Un seul cédant
+est choisi par régime; aucune recherche automatique d'un partage optimal n'est effectuée.
+La ventilation des pensions RPA/FERR/rentes REER est commune au T1 et au T1032. Les documents
+sont calculés avant les revenus nets, ce qui évite de reconstruire les déclarations après
+le fractionnement. Les références du T1032 suivent les sources de chaque personne : locales
+dans `Line.refs`, vers l'autre déclaration dans `CoupleReturn.refs`.
+
+Le T1032 conserve les pensions initiales à 68020, le prorata de mois à 18, le plafond à 21,
+le choix à 22, puis les droits de crédit à 31/34 et les retenues à 68050/39/42. La note 1
+est appliquée au bénéficiaire de moins de 65 ans; un décès survenu dans l'année est confirmé
+séparément de la seule origine de survivant. L'annexe Q, réservée au cédant de 65 ans ou plus,
+reprend le choix à 22 et l'impôt transféré à 58. Le régime québécois ne reprend pas le prorata
+fédéral de l'état civil.
+
+Les déductions 21000/245 et revenus 11600/123 précèdent les récupérations AE/PSV, les crédits
+et l'IMR. Les grilles de retraite B reprennent 122 + 123 − 245; F déduit 245 à 46. Les montants
+peuvent différer entre régimes, car les deux personnes de cette API résident au Québec.
+
+`TaxPayments` exige les retenues et acomptes réels des deux régimes. Les calculs de solde
+reprennent les crédits déjà calculés; ils ne modifient pas la charge fiscale annuelle. Les
+soldes restent inconnus sans cet objet. Les reports d'impôt, trop-perçus de cotisations,
+transferts interprovinciaux et de remboursement restent dans leurs étapes du registre.
+
+Sources : [T1032 2025](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t1032/t1032-25f.pdf),
+[annexe Q](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.Q%282025-12%29.pdf),
+[guide, lignes 122/123](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.G%282025-12%29.pdf),
+[annexe B](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf),
+[annexe F](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.F%282025-12%29.pdf).
+
+Validation : 546 tests, dont 49 nouveaux; copie publique : 444 réussis et 22 sautés. Montants
+chiffrés 2025/2026, choix indépendants, prorata et plafonds, crédits avant 65 ans, note 1,
+récupérations AE/PSV, bases IMR, symétrie, retenues, soldes, références et JSON. Comparaison
+exacte de 600 profils et 128 124 montants avec 9811dc2; tous les totaux sont identiques.
+Les 1 698 valeurs numériques préexistantes des TOML (tables de pension alimentaire comprises) sont inchangées.
+
+Q04 reste à compléter pour les conventions de retraite, les prestations admissibles de
+vétérans, RPAC, pensions étrangères et exclusions pour transferts directs. Les formulaires
+actuels exposent seulement les pensions explicitement représentées par les entrées. Un
+avertissement distingue le prorata T1032 au décès des autres règles de décès encore absentes.
+
+
+Mesure du lot fractionnement, Python 3.14.3, mêmes cinq entrées préconstruites, paramètres
+chauds, médiane de 7 × 10 000 appels avec `timeit` (`benchmarks/compute.py`). Avant : 9811dc2.
+
+| Profil individuel | Avant (µs) | Après (µs) | Rapport |
+| --- | ---: | ---: | ---: |
+| Salarié | 39,951 | 39,857 | 0,998× |
+| Retraité | 37,217 | 39,421 | 1,059× |
+| Prolongation de carrière | 49,867 | 49,786 | 0,998× |
+| Gain en capital | 48,543 | 48,438 | 0,998× |
+| Sans revenu | 22,443 | 22,607 | 1,007× |
+
+Un couple fictif de 66/67 ans en 2025, FERR de 60 000/10 000 $, avec transferts fédéral de
+30 000 $ et québécois de 20 000 $, retenues/acompte nuls confirmés, assurance privée annuelle,
+12 mois d'union et transferts fédéraux de crédits confirmés, prend 146,704 µs pour les deux
+déclarations. Ce profil diffère du couple de 25 000/25 000 $ mesuré au lot précédent.
+
+Le salarié reste à 1,694× la référence historique 0.3 de 23,531 µs. La cible globale d'environ
+1,5× n'est donc pas encore atteinte; A03 conserve le travail de performance. Les deux nouveaux
+formulaires ne sont construits que pour un choix de fractionnement positif.

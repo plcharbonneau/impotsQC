@@ -23,13 +23,14 @@ from .child_support import ChildSupportCase, ChildSupportResult, ParentIncome, c
 from .federal import federal_return
 from .model import CoupleReturn, Form, Line, Taxpayer, TaxReturn
 from .couple import compute_couple, required_couple_questions
-from .inputs import Benefits, CoupleOptions, Deductions, PensionIncome
+from .inputs import Benefits, CoupleOptions, Deductions, PensionIncome, PensionSplit, TaxPayments
 from .parameters import PROVISIONAL_STATUSES, load_parameters
+from .payments import settle_tax_payments
 from .quebec import quebec_return
 from .questions import MissingInformationError, required_questions
 
 __version__ = "0.6.0"
-__all__ = ["CoupleOptions", "CoupleReturn", "compute_couple", "required_couple_questions", "Benefits", "Deductions", "PensionIncome", "ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
+__all__ = ["PensionSplit", "TaxPayments", "CoupleOptions", "CoupleReturn", "compute_couple", "required_couple_questions", "Benefits", "Deductions", "PensionIncome", "ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
            "MissingInformationError", "required_questions", "compute", "compute_child_support", "load_parameters"]
 
 _PARAMS: dict[int, dict] = {}
@@ -52,6 +53,8 @@ def compute(taxpayer: Taxpayer) -> TaxReturn:
     forms: dict[str, Form] = {}
     federal = federal_return(taxpayer, params, qpp, forms=forms)
     quebec_return(taxpayer, params, qpp, oas_repayment=federal.amount("23500"), forms=forms)
+    if taxpayer.payments is not None:
+        settle_tax_payments(taxpayer, forms)
     return TaxReturn(taxpayer, forms, _warnings(taxpayer, params, forms))
 
 
@@ -64,7 +67,7 @@ def _warnings(tp: Taxpayer, params: dict, forms: dict[str, Form], *, coordinated
     if coordinated:
         out.append("Couple : revenus, annexe B et crédits fédéraux des annexes 2/5 coordonnés. "
                    "Les crédits pour autres personnes à charge, études et handicap ainsi que le "
-                   "fractionnement restent à compléter; le total reste incomplet. "
+                   "fractionnement des pensions particulières restent à compléter; le total reste incomplet. "
                    "Chaque conjoint paie sa propre cotisation RAMQ. Le partage de B n'est pas optimisé.")
     elif tp.has_spouse:
         out.append("Couple : la RAMQ utilise le revenu familial et le barème avec conjoint, "

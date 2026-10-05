@@ -24,9 +24,14 @@ formulaires et annexes : montant, numéro de ligne officiel, libellé, et la rè
   la RAMQ et met en commun les droits d'âge/retraite/vivre seul de l'annexe B avant partage.
   Il applique aussi les montants fédéraux pour conjoint soutenu (annexe 5), les transferts de
   droits d'âge/pension (annexe 2 du Québec) et les crédits inutilisés québécois (ligne 431).
-- Hors portée pour l'instant : travail autonome, autres crédits et transferts entre conjoints,
-  fractionnement de pension, crédits pour enfants, frais médicaux, dons, crédits remboursables,
-  acomptes provisionnels. Le calcul global d'un couple reste incomplet et porte un avertissement.
+- Fractionnement : T1032 et annexe Q pour les rentes RPA/REER et FERR saisis, avec choix
+  distincts, plafonds, prorata fédéral, crédits de pension et transfert obligatoire des retenues.
+- Retenues et acomptes réellement fournis : calcul des soldes/remboursements, distincts de
+  l'impôt annuel. Aucun paiement n'est estimé lorsque les renseignements sont absents.
+- Hors portée pour l'instant : travail autonome, autres crédits/transferts familiaux,
+  pensions particulières (conventions de retraite, vétérans, RPAC et pensions étrangères),
+  crédits pour enfants, frais médicaux, dons et crédits remboursables non encore implémentés.
+  Le calcul global d'un couple reste incomplet et porte un avertissement.
 
 ## Usage
 
@@ -87,7 +92,56 @@ négatifs. Le transfert québécois est inscrit à 431, négatif chez le cédant
 bénéficiaire, pour soustraire les crédits reçus à 432. `transfer_unused_quebec=False` permet
 de ne pas le demander. La grille 8 du TP-776.42 recalcule la portion admise à l'IMR.
 Les choix et le partage de B figurent dans `CoupleReturn.to_dict()`.
-Le fractionnement et les crédits restants restent signalés dans les avertissements du total.
+Les pensions particulières et les crédits restants sont signalés dans les avertissements du total.
+
+Pour choisir un fractionnement, fournir deux choix indépendants dans `CoupleOptions`.
+Exemple fictif avec FERR ordinaires, sans pension liée à un décès dans l'année :
+
+```python
+from impotsqc import CoupleOptions, PensionSplit, TaxPayments, Taxpayer, compute_couple
+
+first = Taxpayer(year=2025, age=66, rrif_income=60_000, has_spouse=True,
+    drug_plan_exempt_months=tuple(range(1, 13)),
+    payments=TaxPayments(federal_withheld=10_000, quebec_withheld=12_000,
+                         federal_instalments=0, quebec_instalments=0))
+second = Taxpayer(year=2025, age=60, has_spouse=True,
+    drug_plan_exempt_months=tuple(range(1, 13)), payments=TaxPayments(0, 0, 0, 0))
+choices = CoupleOptions(spouse_amount_claimant="neither", federal_transfers=True,
+    federal_pension_split=PensionSplit(donor="first", amount=30_000, eligible=True,
+        tax_withheld=10_000, months_as_spouses=12, tax_year_months=12,
+        same_year_survivor_pension=0),
+    quebec_pension_split=PensionSplit(donor="first", amount=20_000, eligible=True,
+        tax_withheld=12_000))
+couple = compute_couple(first, second, options=choices)
+couple.first.forms["T1032"]["22"].amount       # 30 000 $, reportés à T1:21000 et T1:11600
+couple.first.forms["TP-1.D.Q"]["22"].amount   # 20 000 $, reportés à TP-1:245 et TP-1:123
+couple.second.federal["31400"].amount          # 0 : FERR reçu par un bénéficiaire de moins de 65 ans
+couple.second.quebec["451.3"].amount           # 4 000 $ de retenues québécoises reçues
+couple.first.federal_balance                  # solde signé : négatif = remboursement
+couple.first.quebec_balance
+```
+
+`required_couple_questions` demande les confirmations manquantes. `tax_withheld` est la part
+réellement retenue sur les pensions admissibles; les feuillets mixtes doivent être ventilés.
+Le fédéral demande les mois d'union et ceux de l'année fiscale du cédant. L'exception de la
+note 1 pour un bénéficiaire de moins de 65 ans peut aussi demander la part des FERR/rentes
+provenant d'un décès de conjoint survenu dans l'année (`same_year_survivor_pension`). Une
+origine de survivant sans l'année du décès ne suffit pas à confirmer cette exception.
+
+Le T1032 figure dans les deux déclarations, avec les mêmes montants et des liens adaptés à
+chaque rôle. L'annexe Q figure uniquement chez le cédant. Les revenus nets, remboursements
+AE/PSV, crédits d'âge/pension, B/F/K et l'IMR sont calculés après les transferts de revenus.
+Les limites de 50 % sont vérifiées; aucun montant ni sens optimal n'est choisi automatiquement.
+Un choix nul ne construit pas d'annexe. Le prorata au décès du T1032 est calculé, avec un
+avertissement sur les autres règles des déclarations de décès encore à implémenter.
+
+`TaxPayments` exige les quatre montants, y compris zéro : retenues fédérales et québécoises,
+acomptes fédéraux et québécois. Les propriétés `federal_balance` et `quebec_balance` sont
+`None` si ces données sont absentes; sinon elles sont ajoutées au résumé JSON. Les lignes
+48400/48500 du T1 et 478/479 du TP-1 distinguent remboursement et solde dû, chacun en valeur
+positive. Les soldes sont calculés avant intérêts, pénalités et tolérances de perception.
+`total_payable` reste la charge fiscale annuelle, cotisations sociales comprises : saisir
+les paiements ne modifie pas cette charge.
 
 Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée du moteur :
 
@@ -97,6 +151,8 @@ Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée 
 | `5000-D1` | Feuille de travail fédérale | Pension admissible, suppléments fédéraux ou récupération AE/PSV; grilles 23500, 25000 et 31400 |
 | `5000-S5` | Montants pour conjoint et personnes à charge | Avec `compute_couple`, montant positif pour conjoint soutenu ou aidant; sections 30300 et 30425 seulement |
 | `5005-S2` | Montants fédéraux transférés du conjoint, version Québec | Avec `compute_couple`, admissibilité confirmée et droits d'âge/pension inutilisés positifs |
+| `T1032` | Choix conjoint de fractionnement de pension | Choix fédéral positif et admissible, copie dans les deux déclarations |
+| `TP-1.D.Q` | Revenus de retraite transférés au conjoint | Choix québécois positif, cédant de 65 ans ou plus; copie chez le cédant seulement |
 | `5000-S3`, `TP-1.D.G` | Gains en capital | Gain net positif fourni; total et inclusion seulement |
 | `5005-S8` | Cotisations au RRQ | Revenu d'emploi positif, 19 à 72 ans, hypothèse d'année complète |
 | `TP-1.D.U` | Déduction RRQ du salarié | Cotisation bonifiée positive, 19 à 72 ans |

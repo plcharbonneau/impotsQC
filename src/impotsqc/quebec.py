@@ -22,7 +22,7 @@ def quebec_return(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
 
 
 def quebec_income(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayment: float, *,
-                  forms: dict[str, Form]) -> Form:
+                  forms: dict[str, Form], pension_received: float = 0.0) -> Form:
     """Remplit les revenus et déductions du TP-1 avant les crédits dépendant du ménage."""
     qc, cot = params["quebec"], params["cotisations"]
     f = Form.from_parameters("TP-1", params)
@@ -78,6 +78,10 @@ def quebec_income(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
               "annexe G, ligne 108 si applicable", refs=("TP-1.D.G:108",) if annex_g is not None else ()),
     ]
     income_refs = ("TP-1:101", "TP-1:114", "TP-1:119", "TP-1:122", "TP-1:128", "TP-1:130", "TP-1:139")
+    if pension_received:
+        income.append(f.add("123", "Revenus de retraite transférés par votre conjoint", pension_received,
+                            "ligne 22 de l'annexe Q du conjoint; lien dans CoupleReturn.refs"))
+        income_refs += ("TP-1:123",)
     if tp.rrsp_income:
         income.append(f.add("154", "Autres revenus", tp.rrsp_income,
                             "point 6 : retraits d'un REER non échu, relevé 2 case C"))
@@ -121,6 +125,10 @@ def quebec_income(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
               refs=("T1:23500",)),
     ]
     deduction_refs = ("TP-1:201", "TP-1:214", "TP-1:248", "TP-1:250")
+    if "TP-1.D.Q" in forms:
+        deductions.append(f.add("245", "Déduction pour revenus de retraite transférés au conjoint",
+                                forms["TP-1.D.Q"].amount("22"), refs=("TP-1.D.Q:22",)))
+        deduction_refs += ("TP-1:245",)
     if tp.deductions is not None:
         deductions.append(f.add("205", "Déduction pour cotisations à un RPA", tp.deductions.rpp))
         deduction_refs += ("TP-1:205",)

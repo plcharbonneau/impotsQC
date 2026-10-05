@@ -30,7 +30,7 @@ aux autres provinces ne sont pas à réintroduire pour 2025/2026.
 | Q01 | Questionnaire familial : dates/statuts, vivre seul, personnes à charge et garde partagée | À implémenter |
 | Q02 | Deux déclarations coordonnées; crédits conjoint/personnes à charge, annexes 2/5/A | Revenus/RAMQ, S5 conjoint, S2 âge/pension et TP-1:431 implémentés; autres personnes à charge, études, handicap et annexe A à compléter |
 | Q03 | Annexe B : droits du conjoint, répartition, supplément monoparental | Droits des deux conjoints et partage implémentés; supplément monoparental et admissibilité détaillée à compléter |
-| Q04 | T1032 et annexe Q : fractionnement, revenus admissibles, choix distincts par régime | À implémenter |
+| Q04 | T1032 et annexe Q : fractionnement, revenus admissibles, choix distincts par régime | RPA/rentes REER/FERR implémentés, prorata, crédits et retenues compris; conventions de retraite, vétérans, RPAC, pensions étrangères et exclusions de transferts directs à compléter |
 | Q05 | Annexe K : détermination des exemptions mensuelles et paiement de la prime du conjoint | À implémenter |
 | C01 | RRQ : choix de cessation, prorata à 18 ans, arrêt après 72 ans, retenues/trop-perçus réels | À implémenter |
 | C02 | AE/RQAP : assujettissement, retenues réelles, annexes 10/13/R selon le cas; emploi hors Québec | À implémenter |
@@ -59,7 +59,7 @@ aux autres provinces ne sont pas à réintroduire pour 2025/2026.
 | E02 | Entreprises : T2125 / TP-80 / L, dépenses, amortissement, cotisations autonome | À implémenter |
 | E03 | Dépenses d'emploi : T777 / TP-59, conditions et remboursements | À implémenter |
 | P01 | FIXATION-PA : revenu de l'enfant, ajustements motivés, entente, difficultés excessives | À implémenter; appréciations judiciaires à saisir explicitement |
-| A01 | Retenues T4/RL-1, acomptes, trop-perçus : solde/remboursement réel | À implémenter |
+| A01 | Retenues T4/RL-1, acomptes, trop-perçus : solde/remboursement réel | Retenues d’impôt et acomptes confirmés via TaxPayments, transferts et soldes implémentés; trop-perçus de cotisations, transferts interprovinciaux et transferts de remboursement à compléter |
 | A02 | Économie REER, taux marginal par revenu et effet sur le revenu disponible | À implémenter |
 | A03 | Mode rapide pour retraiteqc, même calcul que les documents, intégration et mesure | À implémenter |
 | A04 | Plusieurs exemplaires d'un document pour plusieurs entreprises/immeubles/pays | À implémenter sans perdre les alias des formulaires principaux |
@@ -188,3 +188,24 @@ Les priorités ordonnent la réalisation et ne retranchent aucun élément du re
 - Mesure avant/après dans PLAN.md; la contrainte historique de performance reste ouverte.
 - Q02 n'est pas clos. Prochaines étapes : questionnaire familial, fractionnement T1032/Q,
   puis frais/crédits familiaux, selon le registre intégral.
+
+
+## Étape fractionnement des pensions et retenues (5 octobre 2026)
+
+- `PensionSplit` choisit explicitement le cédant, le montant et les confirmations propres à
+  chaque régime. T1032 dans les deux déclarations; annexe Q chez le cédant seulement.
+- T1032 : plafond, mois d'union/année fiscale, crédit du bénéficiaire de moins de 65 ans et
+  décès à l'origine des pensions. Q : cédant de 65 ans ou plus, choix indépendant du fédéral.
+- Le transfert précède revenus nets, récupérations AE/PSV et droits familiaux. B inclut
+  123 et déduit 245; F déduit le transfert à 46. Les deux bases d'IMR en tiennent compte.
+- Retenues de pension transférées dans la proportion prescrite. `TaxPayments` porte les
+  quatre montants réels de retenues et d'acomptes; aucun solde ne suppose des paiements nuls.
+  Les soldes signés et les lignes de remboursement sont distincts de `total_payable`.
+- 546 tests réussis, dont 49 nouveaux; sans données locales : 444 réussis et 22 sautés.
+  600 profils historiques comparés à 9811dc2 : 128 124 montants et tous les totaux strictement
+  identiques; 1 698 valeurs numériques préexistantes des TOML (tables de pension alimentaire comprises) inchangées.
+- Performance : salarié 39,951 → 39,857 µs; maximum 1,059× sur les cinq profils. La cible
+  historique reste ouverte à 1,694× pour le salarié; détails dans PLAN.md.
+- Q04 et A01 restent partiels. Les pensions particulières et exclusions de revenus doivent
+  être ajoutées avec leurs entrées; le prorata T1032 au décès ne représente pas à lui seul
+  toutes les règles d'une déclaration de décès. Q01 conserve ce travail.

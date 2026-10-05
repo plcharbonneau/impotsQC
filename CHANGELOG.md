@@ -81,6 +81,30 @@ traités conformément aux sources officielles.
   (413/430). Aucune des 202 entrées numériques préexistantes des TOML ne change.
 - Performance du lot transferts : salarié 37,496 → 39,496 µs (1,053×); maximum 1,092×
   parmi les cinq profils. La cible historique reste ouverte; détails dans `PLAN.md`.
+- Ajout de `PensionSplit`, T1032 et TP-1.D.Q : choix indépendants de fractionnement des
+  pensions RPA/FERR/rentes REER saisies, limites de 50 %, prorata fédéral et ajustement des
+  crédits de pension. Les confirmations et retenues manquantes bloquent le calcul. La note 1
+  pour certains bénéficiaires de moins de 65 ans demande le revenu lié à un décès de conjoint
+  survenu dans l'année. **Change les résultats lorsque ces nouveaux choix sont fournis.**
+  Sources : [T1032, étapes 2 à 5](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t1032/t1032-25f.pdf),
+  [annexe Q](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.Q%282025-12%29.pdf).
+- Les transferts sont intégrés avant le revenu net, les récupérations AE/PSV, les droits
+  familiaux et l'IMR. La grille de retraite B reprend 122/123 et déduit 245; F déduit le
+  transfert à 46. Sources : [annexe B](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf),
+  [annexe F](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.F%282025-12%29.pdf).
+- `TaxPayments` : retenues d'impôt et acomptes des deux régimes confirmés, y compris zéro.
+  T1032:39/42 et Q:58 répartissent les retenues; nouveaux soldes `federal_balance` et
+  `quebec_balance`, négatifs pour un remboursement et inconnus (`None`) sans paiements saisis.
+  Les lignes finales distinguent remboursement et solde dû en valeur positive. La charge
+  annuelle `total_payable` est conservée. Sources : [T1, étape 6](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-r/5005-r-25f.pdf),
+  [TP-1, lignes 451 à 479](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D%282025-12%29.pdf).
+- Fractionnement et paiements : 546 tests réussis; copie publique : 444 réussis, 22 sautés.
+  600 profils, 128 124 montants et tous les totaux historiques strictement inchangés depuis
+  9811dc2. Aucune des 1 698 valeurs numériques préexistantes des TOML (tables de pension alimentaire comprises) modifiée, aucune clé renommée.
+  Les pensions particulières, transferts directs et situations de décès restent à compléter.
+- Performance du lot fractionnement : salarié 39,951 → 39,857 µs; retraité 37,217 → 39,421 µs.
+  Maximum 1,059× sur les cinq profils; couple avec deux choix : 146,704 µs. La cible
+  historique globale reste ouverte (salarié 1,694×); protocole et profils dans `PLAN.md`.
 - La portée complète demandée et les éléments encore à faire figurent dans `IMPLEMENTATION.md`.
 
 ## 0.5.0 — 2026-10-04

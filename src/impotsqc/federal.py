@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from . import federal_schedules, rules
 from .model import Form, Taxpayer
+from .pensions import pension_amounts
 from .rules import QppContributions
 
 
@@ -22,7 +23,8 @@ def federal_return(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
     return federal_tax(tp, params, forms=forms)
 
 
-def federal_income(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: dict[str, Form]) -> Form:
+def federal_income(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: dict[str, Form],
+                   split_recipient: bool = False) -> Form:
     """Remplit les revenus et déductions du T1 avant toute attribution de crédits familiaux."""
     fed = params["federal"]
     f = Form.from_parameters("T1", params)
@@ -30,21 +32,7 @@ def federal_income(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
 
     # Étape 2 — Revenu total
     eligible, other = rules.grossed_up_dividends(tp.eligible_dividends, tp.other_dividends, fed["dividends"])
-    rrif_65 = tp.rrif_income if tp.age >= fed["pension_amount"]["minimum_age_for_rrif"] else 0.0
-    pension_income, rrsp_annuities, other_rrif = rrif_65, 0.0, tp.rrif_income - rrif_65
-    eligible_annuity = 0.0
-    for pension in tp.pensions:
-        eligible_pension = tp.age >= fed["pension_amount"]["minimum_age_for_rrif"] or pension.from_deceased_spouse
-        if pension.kind == "rpp":
-            pension_income += pension.amount
-        elif pension.kind == "rrsp_annuity":
-            rrsp_annuities += pension.amount
-            if eligible_pension:
-                eligible_annuity += pension.amount
-        elif eligible_pension:
-            pension_income += pension.amount
-        else:
-            other_rrif += pension.amount
+    pension_income, rrsp_annuities, other_rrif, eligible_annuity = pension_amounts(tp, params)
     annex_3 = federal_schedules.capital_gains(tp, params)
     if annex_3 is not None:
         forms[annex_3.code] = annex_3
@@ -68,6 +56,10 @@ def federal_income(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
           params=("federal.dividends.other_gross_up",))
     income_refs = ("T1:10100", "T1:11300", "T1:11400", "T1:11500", "T1:12000", "T1:12100",
                    "T1:12700", "T1:12900", "T1:13000")
+    split = forms.get("T1032")
+    if split is not None and split_recipient:
+        income.append(f.add("11600", "Choix du montant de pension fractionné", split.amount("22"), refs=("T1032:22",)))
+        income_refs += ("T1:11600",)
     benefits = tp.benefits
     if benefits is not None:
         insured = benefits.ei_regular + benefits.ei_special + benefits.ei_maternity_parental + benefits.qpip
@@ -105,6 +97,10 @@ def federal_income(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
                             "cotisations.qpp.second_additional_rate",
                         ))
     deduction_refs = ("T1:20800", "T1:22215")
+    if split is not None and not split_recipient:
+        deductions += f.add("21000", "Déduction pour le choix du montant de pension fractionné", split.amount("22"),
+                            refs=("T1032:22",))
+        deduction_refs += ("T1:21000",)
     if tp.deductions is not None:
         deductions += f.add("20700", "Déduction pour régimes de pension agréés (RPA)", tp.deductions.rpp)
         deductions += f.add("21200", "Cotisations annuelles syndicales, professionnelles et semblables",
@@ -150,7 +146,8 @@ def federal_income(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
 
 
 def federal_personal_credits(tp: Taxpayer, params: dict, qpp: QppContributions, *,
-                             forms: dict[str, Form], coordinated: bool = False) -> Form:
+                             forms: dict[str, Form], coordinated: bool = False,
+                             split_recipient: bool = False) -> Form:
     """Remplit les droits personnels nécessaires avant les transferts entre conjoints."""
     fed, cot = params["federal"], params["cotisations"]
     f = forms["T1"]
@@ -158,6 +155,11 @@ def federal_personal_credits(tp: Taxpayer, params: dict, qpp: QppContributions, 
     annex_8 = forms.get("5005-S8")
     worksheet = forms.get("5000-D1")
     pension = worksheet.amount("31400-8") if worksheet is not None else 0.0
+    pension_ref = "5000-D1:31400-8" if pension else "T1:11500"
+    if "T1032" in forms:
+        number = "34" if split_recipient else "31"
+        pension = forms["T1032"].amount(number)
+        pension_ref = f"T1032:{number}"
     # Étape 5, partie B — Crédits d'impôt non remboursables
     f.add("30000", "Montant personnel de base", rules.federal_basic_personal_amount(net, fed["basic_personal_amount"]),
           "bonification réduite linéairement entre les 4e et 5e paliers, selon la ligne 23600",
@@ -202,8 +204,8 @@ def federal_personal_credits(tp: Taxpayer, params: dict, qpp: QppContributions, 
           refs=("T1:10100",),
           params=("federal.canada_employment_amount.maximum",))
     f.add("31400", "Montant pour revenu de pension", min(fed["pension_amount"]["maximum"], pension),
-          "grille 31400; PSV, RRQ et retraits ordinaires REER exclus",
-          refs=("5000-D1:31400-8",) if pension else ("T1:11500",),
+          "T1032, étape 4" if "T1032" in forms else "grille 31400; PSV, RRQ et retraits ordinaires REER exclus",
+          refs=(pension_ref,),
           params=("federal.pension_amount.maximum",))
     if coordinated:
         codes = ("30800", "31200", "31205", "31260")

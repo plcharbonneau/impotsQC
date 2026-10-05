@@ -21,7 +21,7 @@ Chaque `Form` expose `code`, `title`, `version`, `source` et `lines`. Chaque `Li
 Les clés de lignes sont les numéros officiels 2025. Le T691 utilise `P1-93`, `P5-11`, etc.,
 car sa numérotation recommence à chaque partie. Le TP-776.42 utilise `22` pour le revenu
 imposable modifié. `to_dict()` rend les métadonnées et les lignes dans `forms`; les anciens
-conteneurs JSON `federal` et `quebec` sont conservés pendant la version 0.3.
+conteneurs JSON `federal` et `quebec` restent conservés en 0.5; leur retrait est différé.
 
 Les métadonnées sont des données annuelles dans `formulaires.toml`. Les documents de 2025 sont
 encore utilisés pour 2026 (`rule_2025`), sans modifier les taux et seuils de 2026. Le document
@@ -145,6 +145,129 @@ L'ajout de `refs` et `params` à la dataclass gelée initiale dépassait le budg
 `Line` utilise donc un tuple nommé immuable, qui réduit le coût mesuré de construction, sans
 nouvelle dépendance. Les calculs ne font pas de recherche de métadonnées par ligne.
 
+## Formulaires complémentaires (0.4.0)
+
+La suite de la refonte part de `main` après la fusion de la demande de fusion nº 1 (`2b768a2`).
+Elle expose quatre documents supplémentaires à partir des entrées déjà présentes dans `Taxpayer` :
+
+| Formulaire | Partie couverte | Ligne reprise par la déclaration |
+| --- | --- | --- |
+| `5000-S3` | Total net fourni et inclusion, fin de la partie 4 et partie 5 | `19900` → T1 `12700` |
+| `TP-1.D.G` | Partie F, du gain net fourni à l'inclusion | `108` → TP-1 `139` |
+| `5005-S8` | Parties 1 et 2, salarié québécois, retenues simulées égales aux cotisations requises | `P2-35` → T1 `30800`; `P2-47` → T1 `22215` |
+| `TP-1.D.U` | Partie B, déduction RRQ du salarié | `23` → TP-1 `248` |
+
+Les sources sont les PDF officiels 2025 référencés dans les catalogues annuels. Le gain net
+est une entrée agrégée : aucune catégorie de bien, transaction, provision, date ni prix de base
+n'est inventé. Les parties 3/G exposées commencent respectivement à `19700` et `94.1`.
+
+Les annexes RRQ concernent uniquement les profils annuels de 19 à 72 ans. Les retenues sont
+celles de la règle commune `qpp_contributions`, déjà utilisée par 0.3.0; les montants transférés
+restent identiques bit pour bit. Les différences nulles de l'annexe 8 sont résumées à `P2-24`,
+avec des références vers les retenues et cotisations requises. Les lignes auxiliaires servant
+uniquement à répartir un excédent ou un manque ne sont pas construites.
+
+À 18 ans, le mois de naissance nécessaire au prorata manque. Dès 73 ans, la cessation des
+cotisations n'est pas gérée dans le moteur hérité. Les deux situations reçoivent un avertissement,
+et les annexes 8/U ne sont pas produites. Les montants historiques sont conservés : traiter ces
+limites demanderait une correction fiscale distincte et une entrée « change les résultats ».
+
+Vérification numérique : 2 049 déclarations fictives comparées à 0.3.0, y compris les voisinages
+des deux plafonds RRQ et l'exemption. Les 320 044 montants de lignes préexistantes et tous les
+totaux sont strictement identiques. Aucun fichier de paramètres fiscaux n'est modifié; seules
+quatre tables sont ajoutées à chacun des catalogues de formulaires.
+
+Validation finale : **313 tests réussis** avec l'oracle local et les exemples exécutables;
+**211 réussis, 22 sautés** dans une copie sans `oracle/`. Les tests de continuité et de revenu net
+croissant sont conservés, ainsi que toutes les valeurs attendues des tests fiscaux existants.
+
+Mesure finale appariée avec `timeit` et `benchmarks/compute.py`, Python 3.14.3 : `main` 0.3.0 et
+la branche 0.4.0 dans le même environnement, paramètres chauds, contribuables préconstruits,
+médiane de 7 répétitions de 10 000 appels, sans JSON.
+
+| Profil fictif, année 2026 | 0.3.0 (µs) | 0.4.0 (µs) | Rapport |
+| --- | ---: | ---: | ---: |
+| Salarié, 40 ans, emploi de 80 000 $ | 24,414 | 35,994 | 1,47× |
+| Retraité, 66 ans, FERR 30 000 $, PSV 9 000 $, RRQ 12 000 $ | 33,038 | 31,262 | 0,95× |
+| Prolongation de carrière, 67 ans, emploi de 45 000 $ | 31,551 | 43,621 | 1,38× |
+| IMR, 50 ans, gain en capital de 600 000 $ | 38,852 | 42,051 | 1,08× |
+| Sans revenu, 40 ans | 20,696 | 20,135 | 0,97× |
+
+Le surcoût maximal de cette mesure est de **1,47×**. Les annexes RRQ construisent leurs lignes
+immuables en groupe. Aucun document non applicable n'est construit. Les petites variations
+sur les profils sans nouvelle annexe relèvent du bruit de mesure; les temps restent propres
+à la machine et à ces profils.
+
+## Assurance médicaments (0.5.0)
+
+Correction fiscale demandée après l'extraction des annexes. Les renseignements absents ne
+produisent plus de prime RAMQ présumée. `required_questions(Taxpayer)` rend un dictionnaire
+champ → question; `compute` le reprend dans `MissingInformationError` et bloque le calcul tant
+que des réponses sont nécessaires. Les questions n'exécutent aucune interaction et sont
+sérialisables en JSON. Les années absentes restent refusées par le chargeur de paramètres.
+
+Entrées : conjoint fiscal au 31 décembre (`has_spouse`, distinct de `lives_alone`), revenu net
+québécois du conjoint lorsqu'il existe (`spouse_net_income`), mois exemptés de 1 à 12
+(`drug_plan_exempt_months`) et nombre d'enfants admissibles (`drug_plan_dependent_children`).
+`None` signifie inconnu; zéro, `False` et le tuple vide sont des réponses explicites. Le nombre
+d'enfants n'est pas nécessaire si les douze mois sont exemptés. La couverture privée est celle
+du régime de base; les exemptions spéciales sont déterminées par l'appelant à partir du guide.
+
+L'[annexe K 2025](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.K%282025-12%29.pdf)
+utilise les revenus nets du ménage et les exemptions familiales (36 à 48), les mois exemptés
+par semestre (60 à 62), la grille avec ou sans conjoint, puis deux plafonds proratisés (84 à 90).
+La ligne 98 reporte uniquement la cotisation personnelle; payer celle du conjoint relève d'un
+choix non modélisé. Le régime privé couvrant toute l'année évite même de construire l'annexe.
+Les taux et montants sont dans les TOML annuels. Les nouveaux paramètres 2026 restent des
+estimations sourcées et signalées, en attendant l'annexe K 2026; aucune valeur préexistante n’est modifiée.
+
+Le revenu du conjoint entre aussi dans l'annexe B, ligne 12, et dans sa réduction selon le
+revenu familial. **Le calcul global du couple reste incomplet** : B ne met pas en commun les
+droits d'âge/retraite du conjoint et n'en répartit pas le résultat; les autres crédits/transferts
+entre conjoints et le fractionnement ne sont pas calculés. `warnings` indique ces limites.
+
+Validation : 362 tests réussis avec les relevés locaux, incluant 49 nouveaux cas; 260 réussis
+et 22 sautés dans une copie sans oracle. Les tests
+historiques donnent explicitement les réponses qui étaient auparavant supposées. Ils conservent
+leurs valeurs attendues; 500 profils supplémentaires gardent exactement leurs 92 540 montants
+préexistants et leurs totaux. Les tests couvrent les 49 combinaisons de comptes de mois par
+semestre pour chaque barème et année, les enfants, les seuils, la continuité, les questions,
+les entrées invalides, les références et le JSON.
+
+Mesure avec `timeit`, Python 3.14.3, mêmes cinq profils qu'en 0.4, paramètres chauds, entrées
+préconstruites, médiane de sept répétitions de 10 000 appels, sans sérialisation :
+
+| Profil | `main` 0.3.0 (µs) | Avant RAMQ 0.4.0 (µs) | Après 0.5.0 (µs) | RAMQ : après/avant |
+| --- | ---: | ---: | ---: | ---: |
+| Salarié | 23,531 | 35,410 | 36,466 | 1,030× |
+| Retraité | 31,212 | 30,855 | 31,962 | 1,036× |
+| Prolongation de carrière | 30,542 | 42,530 | 43,464 | 1,022× |
+| IMR / gain en capital | 38,326 | 40,615 | 41,894 | 1,031× |
+| Sans revenu | 19,729 | 19,328 | 19,762 | 1,022× |
+
+Surcoût maximal de la correction RAMQ : **1,036×**. Depuis `main`, les quatre nouvelles
+annexes et cette correction totalisent **1,55×** pour le salarié (légèrement au-dessus de la
+cible indicative de 1,5×); les autres profils sont à 1,42× ou moins. Les mesures varient selon
+la machine et sa charge. Le calcul conserve `Form.add` et les références explicites.
+
+Aucune clé de formulaire ou de ligne n'est renommée; les changements d'entrée sont décrits
+dans le `CHANGELOG` 0.5.0. Les nouveaux cas de couverture ou de ménage **changent les résultats**;
+les hypothèses historiques, lorsqu'elles sont confirmées, reproduisent les montants historiques.
+
+## Prochains formulaires
+
+Les autres annexes demandent de nouvelles entrées ou des règles fiscales supplémentaires.
+Leur absence ne doit pas être confondue avec un calcul de ces situations à zéro.
+
+| Document ou famille | Entrées à modéliser avant son calcul |
+| --- | --- |
+| `5005-S10`, `TP-1.D.R` | Travail autonome, emploi hors Québec, retenues réelles AE/RQAP; les formulaires excluent le cas du seul salarié québécois |
+| `T2125`, `TP-80`, `TP-1.D.L` | Revenus et dépenses d'entreprise, amortissement et revenus nets autonomes |
+| Annexe 7 fédérale | Cotisations REER datées, inutilisées, RAP/REEP et maximum déductible; `rrsp_deduction` est seulement un montant déjà déterminé |
+| `T1032`, `TP-1.D.Q` | Conjoint, revenus admissibles et choix de fractionnement |
+| Annexes C, D, H, J, T et V du Québec | Frais de garde, logement, personne aidée, services aux aînés, études, dons et conditions familiales propres à chaque crédit |
+| Parties détaillées des annexes 3 et G | Dispositions par catégorie, prix de base, produits, dépenses, provisions et reports de pertes |
+
 ## Pension alimentaire pour enfants (0.2.0)
 
 Module `child_support`, ajouté à la demande de PL le 2026-10-04 : le formulaire de fixation du
@@ -178,6 +301,7 @@ diverge. Chacune est à confirmer par un logiciel certifié par Revenu Québec.
 
 ## Hors portée de la v0.1
 
-Travail autonome, couple et fractionnement du revenu de pension, transferts entre conjoints,
-enfants et crédits remboursables (solidarité, allocation famille), frais médicaux, dons,
+La RAMQ des couples et les exemptions pour enfants sont couvertes depuis 0.5. Restent hors portée :
+travail autonome, calcul fiscal complet du couple, fractionnement du revenu de pension, transferts
+entre conjoints, crédits pour enfants et crédits remboursables (solidarité, allocation famille), frais médicaux, dons,
 acomptes provisionnels, pertes reportées, résidents d'une autre province.

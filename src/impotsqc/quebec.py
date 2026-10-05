@@ -41,9 +41,20 @@ def quebec_return(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
               "cotisations.qpp.second_additional_rate",
           ))
 
+    if tp.employment_income > 0 and 19 <= tp.age <= 72:
+        f.add("98.1", "Salaire admissible au RRQ",
+              min(tp.employment_income, cot["qpp"]["additional_maximum_pensionable_earnings"]),
+              "case G simulée d'un relevé 1 : emploi québécois, plafond annuel supplémentaire",
+              refs=("TP-1:101",), params=("cotisations.qpp.additional_maximum_pensionable_earnings",))
+    annex_u = quebec_schedules.qpp_employment(tp, params, f, qpp)
+    if annex_u is not None:
+        forms[annex_u.code] = annex_u
+    annex_g = quebec_schedules.capital_gains(tp, params)
+    if annex_g is not None:
+        forms[annex_g.code] = annex_g
+
     # Revenu total
     eligible, other = rules.grossed_up_dividends(tp.eligible_dividends, tp.other_dividends, qc["dividends"])
-    incl = params["federal"]["capital_gains"]["inclusion_rate"]
     f.add("166", "Montant réel des dividendes déterminés", tp.eligible_dividends)
     f.add("167", "Montant réel des dividendes ordinaires", tp.other_dividends)
     income = [
@@ -56,8 +67,8 @@ def quebec_return(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
               refs=("TP-1:166", "TP-1:167"),
               params=("quebec.dividends.eligible_gross_up", "quebec.dividends.other_gross_up")),
         f.add("130", "Intérêts et autres revenus de placement", tp.interest_income),
-        f.add("139", "Gains en capital imposables", tp.capital_gains * incl, f"annexe G : gain × {incl:g}",
-              params=("federal.capital_gains.inclusion_rate",)),
+        f.add("139", "Gains en capital imposables", annex_g.amount("108") if annex_g is not None else 0.0,
+              "annexe G, ligne 108 si applicable", refs=("TP-1.D.G:108",) if annex_g is not None else ()),
     ]
     total = f.add("199", "Revenu total", sum(income),
                   refs=("TP-1:101", "TP-1:114", "TP-1:119", "TP-1:122", "TP-1:128", "TP-1:130", "TP-1:139"))
@@ -70,8 +81,10 @@ def quebec_return(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
               refs=("TP-1:101",),
               params=("quebec.workers_deduction.maximum", "quebec.workers_deduction.rate")),
         f.add("214", "Déduction pour REER ou RPAC/RVER", tp.rrsp_deduction),
-        f.add("248", "Déduction pour cotisation au RRQ, au RPC ou au RQAP", qpp.enhanced,
-              "cotisations supplémentaires au RRQ (annexe U, partie B)",
+        f.add("248", "Déduction pour cotisation au RRQ, au RPC ou au RQAP",
+              annex_u.amount("23") if annex_u is not None else qpp.enhanced,
+              "annexe U, partie B, ligne 23 si applicable",
+              refs=("TP-1.D.U:23",) if annex_u is not None else (),
               params=(
                   "cotisations.qpp.basic_exemption",
                   "cotisations.qpp.maximum_pensionable_earnings",
@@ -150,7 +163,7 @@ def quebec_return(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
     fss = f.add("446", "Cotisation au Fonds des services de santé (FSS)",
                 annex_f.amount("82") if annex_f is not None else 0.0, "annexe F, ligne 82 si applicable",
                 refs=("TP-1.D.F:82",) if annex_f is not None else ())
-    annex_k = quebec_schedules.schedule_k(params, f)
+    annex_k = quebec_schedules.schedule_k(tp, params, f)
     if annex_k is not None:
         forms[annex_k.code] = annex_k
     drug = f.add("447", "Cotisation au régime d'assurance médicaments du Québec",

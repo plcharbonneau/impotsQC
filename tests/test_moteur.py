@@ -8,25 +8,27 @@ import json
 
 import pytest
 
-from impotsqc import Taxpayer, compute
+from profiles import single_public_taxpayer
+
+from impotsqc import compute
 
 
 def total(**kw) -> float:
     """Total à payer d'un contribuable 2026."""
-    return compute(Taxpayer(year=2026, **kw)).total_payable
+    return compute(single_public_taxpayer(year=2026, **kw)).total_payable
 
 
 @pytest.mark.parametrize("kw", [{"age": 17}, {"age": 40, "employment_income": -1.0}, {"age": 40, "rrsp_income": -5.0}])
 def test_entrees_invalides_refusees(kw):
     """Âge hors d'une vie adulte ou montant négatif : refus explicite."""
     with pytest.raises(ValueError):
-        Taxpayer(year=2026, **kw)
+        single_public_taxpayer(year=2026, **kw)
 
 
 def test_annee_absente():
     """Une année sans paramètres est refusée, avec la liste des années livrées."""
     with pytest.raises(ValueError, match="2026"):
-        compute(Taxpayer(year=1999, age=40))
+        compute(single_public_taxpayer(year=1999, age=40))
 
 
 @pytest.mark.parametrize("seuil", [58_523, 117_045, 181_440, 258_482, 54_345 + 1_450, 95_323, 42_955])
@@ -58,15 +60,15 @@ def test_revenu_net_croissant():
 
 def test_ferr_avant_65_ans():
     """Avant 65 ans, le FERR va à la ligne 13000 et n'ouvre pas le montant pour revenu de pension."""
-    jeune = compute(Taxpayer(year=2026, age=60, rrif_income=20_000))
-    vieux = compute(Taxpayer(year=2026, age=65, rrif_income=20_000))
+    jeune = compute(single_public_taxpayer(year=2026, age=60, rrif_income=20_000))
+    vieux = compute(single_public_taxpayer(year=2026, age=65, rrif_income=20_000))
     assert jeune.federal.amount("13000") == 20_000 and jeune.federal.amount("31400") == 0
     assert vieux.federal.amount("11500") == 20_000 and vieux.federal.amount("31400") == 2_000
 
 
 def test_json_pour_agent():
     """`to_dict()` est sérialisable en JSON et porte lignes, résumé et avertissements."""
-    r = compute(Taxpayer(year=2026, age=70, rrif_income=40_000, oas_pension=9_000, capital_gains=10_000))
+    r = compute(single_public_taxpayer(year=2026, age=70, rrif_income=40_000, oas_pension=9_000, capital_gains=10_000))
     d = json.loads(json.dumps(r.to_dict(), ensure_ascii=False))
     assert d["federal"]["23600"]["label"] == "Revenu net"
     assert d["quebec"]["432"]["label"] == "Impôt du Québec"
@@ -77,22 +79,22 @@ def test_json_pour_agent():
 def test_credit_prolongation_de_carriere():
     """Ligne 391 : 14 % du revenu de travail au-delà de l'exclusion, plafonné; 65 ans et plus;
     réduit de 7 % du revenu net au-delà du seuil; limité à l'impôt qui reste après les autres crédits."""
-    plein = compute(Taxpayer(year=2026, age=67, employment_income=45_000)).quebec
+    plein = compute(single_public_taxpayer(year=2026, age=67, employment_income=45_000)).quebec
     assert plein.amount("391") == pytest.approx(0.14 * 12_755)
-    borne = compute(Taxpayer(year=2026, age=67, employment_income=30_000)).quebec
+    borne = compute(single_public_taxpayer(year=2026, age=67, employment_income=30_000)).quebec
     assert borne.amount("391") == pytest.approx(borne.amount("401") - borne.amount("377.1"))
     assert borne.amount("391") < 0.14 * 12_755 and borne.amount("432") == 0
-    assert compute(Taxpayer(year=2026, age=64, employment_income=45_000)).quebec.amount("391") == 0
-    reduit = compute(Taxpayer(year=2026, age=66, employment_income=70_000)).quebec
+    assert compute(single_public_taxpayer(year=2026, age=64, employment_income=45_000)).quebec.amount("391") == 0
+    reduit = compute(single_public_taxpayer(year=2026, age=66, employment_income=70_000)).quebec
     attendu = 0.14 * 12_755 - 0.07 * (reduit.amount("275") - 57_660)
     assert reduit.amount("391") == pytest.approx(attendu) and 0 < attendu < 0.14 * 12_755
-    assert compute(Taxpayer(year=2025, age=66, employment_income=95_000)).quebec.amount("391") == 0
+    assert compute(single_public_taxpayer(year=2025, age=66, employment_income=95_000)).quebec.amount("391") == 0
 
 
 def test_impot_minimum_gros_gain_en_capital():
     """Un gros gain en capital avec peu d'autres revenus déclenche l'IMR des deux côtés : le montant
     minimum remplace l'impôt ordinaire, l'abattement du Québec se calcule sur lui, et c'est signalé."""
-    r = compute(Taxpayer(year=2026, age=50, capital_gains=600_000))
+    r = compute(single_public_taxpayer(year=2026, age=50, capital_gains=600_000))
     f, q = r.federal, r.quebec
     assert r.forms["T691"].amount("P1-103") > f.amount("40600") and f.amount("41700") == r.forms["T691"].amount("P1-103")
     assert f.amount("44000") == pytest.approx(0.165 * r.forms["T691"].amount("P1-103"))
@@ -102,6 +104,6 @@ def test_impot_minimum_gros_gain_en_capital():
 
 def test_impot_minimum_sans_effet_sur_un_salarie():
     """Un salarié à revenu ordinaire n'est jamais touché : l'impôt ordinaire domine."""
-    r = compute(Taxpayer(year=2026, age=40, employment_income=350_000))
+    r = compute(single_public_taxpayer(year=2026, age=40, employment_income=350_000))
     assert r.federal.amount("41700") == r.federal.amount("40600") and r.quebec.amount("432") == r.quebec.amount("430")
     assert not any("minimum" in w for w in r.warnings)

@@ -2,19 +2,23 @@
 # Copyright (C) 2026 Pier-Luc Charbonneau
 """Annexes du Québec, avec la numérotation des documents officiels 2025.
 
-Seules les parties utilisées par le moteur sont remplies. Les situations hors portée (conjoint,
-reports, autres déductions) restent hors portée : l'extraction ne corrige pas les règles de 0.2.
+Seules les parties utilisées par le moteur sont remplies. La RAMQ tient compte du conjoint
+fiscal, des enfants admissibles et des mois exemptés déclarés. Les autres limites sont documentées
+et signalées dans les avertissements du résultat.
 Une fonction rend None avant de construire un formulaire qui ne s'applique pas.
 """
 
 from __future__ import annotations
 
 from . import rules
-from .model import Form, Taxpayer
+from .model import Form, Line, Taxpayer
 
 
 def schedule_b(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
-    """Annexe B, parties A et B et grille de retraite; particulier sans conjoint."""
+    """Annexe B : montants personnels d'âge et de retraite, réduction selon le revenu familial.
+
+    Les droits du conjoint et la répartition du montant entre conjoints restent hors portée;
+    un avertissement de `compute` signale cette limite pour les couples."""
     t = params["quebec"]["schedule_b"]
     retirement = quebec.amount("122")
     if not (tp.lives_alone or tp.age >= t["minimum_age"] or retirement > 0):
@@ -22,13 +26,18 @@ def schedule_b(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
     f = Form.from_parameters("TP-1.D.B", params)
     net = f.add("10", "Revenu net", quebec.amount("275"),
                 refs=("TP-1:275",))
-    f.add("14", "Revenu familial", net, "sans conjoint",
-          refs=("TP-1.D.B:10",))
-    f.add("15", "Revenu familial", net,
+    family_income = net
+    family_refs = ("TP-1.D.B:10",)
+    if tp.has_spouse:
+        family_income += f.add("12", "Revenu net du conjoint", tp.spouse_net_income,
+                               "ligne 275 du TP-1 du conjoint, fournie par l'appelant")
+        family_refs += ("TP-1.D.B:12",)
+    f.add("14", "Revenu familial", family_income, refs=family_refs)
+    f.add("15", "Revenu familial", family_income,
           refs=("TP-1.D.B:14",))
     threshold = f.add("16", "Seuil de réduction", t["reduction_threshold"],
                       params=("quebec.schedule_b.reduction_threshold",))
-    excess = f.add("18", "Revenu familial excédant le seuil", max(0.0, net - threshold),
+    excess = f.add("18", "Revenu familial excédant le seuil", max(0.0, family_income - threshold),
                    refs=("TP-1.D.B:15", "TP-1.D.B:16"))
     alone = f.add("20", "Montant pour personne vivant seule", t["living_alone"] if tp.lives_alone else 0.0,
                   params=("quebec.schedule_b.living_alone",))
@@ -56,7 +65,7 @@ def schedule_b(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
           refs=("TP-1.D.B:18",),
           params=("quebec.schedule_b.reduction_rate",))
     amount = rules.schedule_b_amount(age=tp.age, lives_alone=tp.lives_alone, retirement_income=retirement,
-                                     family_income=net, table=t)
+                                     family_income=family_income, table=t)
     f.add("32", "Montant auquel vous avez droit", amount, "ligne 30 − ligne 31, minimum zéro",
           refs=("TP-1.D.B:30", "TP-1.D.B:31"))
     f.add("34", "Montant accordé en raison de l'âge ou pour personne vivant seule ou pour revenus de retraite",
@@ -118,68 +127,94 @@ def schedule_f(params: dict, quebec: Form) -> Form | None:
     return f
 
 
-def schedule_k(params: dict, quebec: Form) -> Form | None:
-    """Annexe K, particulier sans conjoint, assuré toute l'année comme dans l'API 0.2."""
+def schedule_k(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
+    """Annexe K : cotisation personnelle, selon les réponses sur le ménage et les mois exemptés.
+
+    `compute` vérifie les renseignements avant cet appel. Les mois exemptés sont ceux de la
+    partie B, même si la personne est inscrite au régime public. Le conjoint paie sa propre prime.
+    """
+    months = tp.drug_plan_exempt_months
+    if len(months) == 12:
+        return None
     t = params["quebec"]["drug_insurance"]
+    status = "couple" if tp.has_spouse else "single"
     net = quebec.amount("275")
-    if net <= t["exemption_single"]:
+    family_income = net + (tp.spouse_net_income if tp.has_spouse else 0.0)
+    base_exemption = t[f"exemption_{status}"]
+    if family_income <= base_exemption:
         return None
     f = Form.from_parameters("TP-1.D.K", params)
-    f.add("36", "Revenu net", net,
-          refs=("TP-1:275",))
-    f.add("40", "Revenu familial", net, "sans conjoint",
-          refs=("TP-1.D.K:36",))
-    exemption = f.add("41", "Exemption", t["exemption_single"],
-                      params=("quebec.drug_insurance.exemption_single",))
-    f.add("46", "Exemption totale", exemption, "sans conjoint ni enfant à charge",
-          refs=("TP-1.D.K:41",))
-    x = f.add("48", "Revenu servant à calculer la cotisation", net - exemption,
+    f.add("36", "Revenu net", net, refs=("TP-1:275",))
+    family_refs = ("TP-1.D.K:36",)
+    if tp.has_spouse:
+        f.add("37", "Revenu net du conjoint", tp.spouse_net_income,
+              "ligne 275 du TP-1 du conjoint, fournie par l'appelant")
+        family_refs += ("TP-1.D.K:37",)
+    f.add("40", "Revenu familial", family_income, refs=family_refs)
+    f.add("41", "Exemption", base_exemption,
+          params=(f"quebec.drug_insurance.exemption_{status}",))
+    exemption = rules.drug_insurance_exemption(has_spouse=tp.has_spouse,
+                                              dependent_children=tp.drug_plan_dependent_children, table=t)
+    exemption_refs = ("TP-1.D.K:41",)
+    if tp.drug_plan_dependent_children:
+        number = "42" if tp.has_spouse else "44"
+        count = "one" if tp.drug_plan_dependent_children == 1 else "multiple"
+        f.add(number, "Exemption pour enfants à charge", exemption - base_exemption,
+              "nombre d'enfants admissibles confirmé par l'appelant",
+              params=(f"quebec.drug_insurance.child_exemption_{status}_{count}",))
+        exemption_refs += (f"TP-1.D.K:{number}",)
+    f.add("46", "Exemption totale", exemption, refs=exemption_refs)
+    x = f.add("48", "Revenu servant à calculer la cotisation", max(0.0, family_income - exemption),
               refs=("TP-1.D.K:40", "TP-1.D.K:46"))
-    f.add("62", "Nombre de mois exemptés", 0.0, "hypothèse héritée : assuré au régime public toute l'année")
+    first = sum(month <= 6 for month in months)
+    second = len(months) - first
+    f.add("60", "Nombre de mois exemptés de janvier à juin", first, "mois confirmés par l'appelant")
+    f.add("61", "Nombre de mois exemptés de juillet à décembre", second, "mois confirmés par l'appelant")
+    f.add("62", "Nombre de mois exemptés", len(months), refs=("TP-1.D.K:60", "TP-1.D.K:61"))
     width = t["first_bracket_width"]
-    raw = x * t["first_rate_single"] if x <= width else width * t["first_rate_single"] + (x - width) * t["second_rate_single"]
+    first_rate, second_rate = t[f"first_rate_{status}"], t[f"second_rate_{status}"]
+    first_param = f"quebec.drug_insurance.first_rate_{status}"
+    second_param = f"quebec.drug_insurance.second_rate_{status}"
+    raw = x * first_rate if x <= width else width * first_rate + (x - width) * second_rate
     if raw >= t["rate_cap"]:
         premium = f.add("84", "Cotisation de la colonne applicable", t["rate_cap"], "plafond atteint",
                         refs=("TP-1.D.K:48",),
-                        params=(
-                            "quebec.drug_insurance.rate_cap",
-                            "quebec.drug_insurance.first_bracket_width",
-                            "quebec.drug_insurance.first_rate_single",
-                            "quebec.drug_insurance.second_rate_single",
-                        ))
+                        params=("quebec.drug_insurance.rate_cap", "quebec.drug_insurance.first_bracket_width",
+                                first_param, second_param))
     else:
-        f.add("77", "Revenu servant à calculer la cotisation", x,
-              refs=("TP-1.D.K:48",))
+        f.add("77", "Revenu servant à calculer la cotisation", x, refs=("TP-1.D.K:48",))
         upper = x > width
         threshold = f.add("78", "Seuil de la colonne applicable", width if upper else 0.0,
                           params=("quebec.drug_insurance.first_bracket_width",))
         excess = f.add("79", "Revenu excédant le seuil", x - threshold,
                        refs=("TP-1.D.K:77", "TP-1.D.K:78"))
-        rate = f.add("80", "Taux de la colonne applicable", t["second_rate_single"] if upper else t["first_rate_single"],
-                     "taux exprimé comme fraction",
-                     params=("quebec.drug_insurance.first_rate_single", "quebec.drug_insurance.second_rate_single"))
+        rate = f.add("80", "Taux de la colonne applicable", second_rate if upper else first_rate,
+                     "taux exprimé comme fraction", params=(second_param if upper else first_param,))
         f.add("81", "Cotisation sur le revenu excédentaire", excess * rate,
               refs=("TP-1.D.K:79", "TP-1.D.K:80"))
-        f.add("82", "Cotisation de base de la colonne applicable", width * t["first_rate_single"] if upper else 0.0,
-              params=("quebec.drug_insurance.first_bracket_width", "quebec.drug_insurance.first_rate_single"))
+        f.add("82", "Cotisation de base de la colonne applicable", width * first_rate if upper else 0.0,
+              params=("quebec.drug_insurance.first_bracket_width", first_param))
         f.add("83", "Cotisation selon le revenu", raw, "lignes 81 + 82, plafond non atteint",
-              refs=("TP-1.D.K:81", "TP-1.D.K:82"),
-              params=("quebec.drug_insurance.rate_cap",))
-        premium = f.add("84", "Cotisation de la colonne applicable", raw,
-                        refs=("TP-1.D.K:83",))
-    f.add("85", "Réduction pour les mois exemptés", 0.0, "aucun mois exempté",
-          refs=("TP-1.D.K:84", "TP-1.D.K:62"))
-    f.add("86", "Cotisation pour les mois assurés", premium,
-          refs=("TP-1.D.K:84", "TP-1.D.K:85"))
+              refs=("TP-1.D.K:81", "TP-1.D.K:82"), params=("quebec.drug_insurance.rate_cap",))
+        premium = f.add("84", "Cotisation de la colonne applicable", raw, refs=("TP-1.D.K:83",))
+    reduction = f.add("85", "Réduction pour les mois exemptés", premium * len(months) / 12,
+                      "ligne 84 × ligne 62 ÷ 12", refs=("TP-1.D.K:84", "TP-1.D.K:62"))
+    reduced = f.add("86", "Cotisation pour les mois non exemptés", premium - reduction,
+                    refs=("TP-1.D.K:84", "TP-1.D.K:85"))
     maximum = f.add("87", "Cotisation maximale pour l'année", t["annual_maximum"],
                     params=("quebec.drug_insurance.annual_maximum",))
-    f.add("88", "Réduction du maximum pour les mois exemptés", 0.0, "aucun mois exempté",
-          refs=("TP-1.D.K:62",))
-    f.add("89", "Maximum pour les mois assurés", maximum,
-          refs=("TP-1.D.K:87", "TP-1.D.K:88"))
-    amount = f.add("90", "Cotisation personnelle", rules.drug_insurance_premium(net, t), "minimum des lignes 86 et 89",
-                   refs=("TP-1.D.K:86", "TP-1.D.K:89"))
-    f.add("98", "Cotisation au régime d'assurance médicaments du Québec", amount, "sans cotisation d'un conjoint",
+    maximum_reduction = f.add("88", "Réduction du maximum pour les mois exemptés",
+                              first * t["monthly_maximum_first_half"] + second * t["monthly_maximum_second_half"],
+                              "ligne 60 × plafond du premier semestre + ligne 61 × plafond du second semestre",
+                              refs=("TP-1.D.K:60", "TP-1.D.K:61"),
+                              params=("quebec.drug_insurance.monthly_maximum_first_half",
+                                      "quebec.drug_insurance.monthly_maximum_second_half"))
+    reduced_maximum = f.add("89", "Maximum pour les mois non exemptés", max(0.0, maximum - maximum_reduction),
+                            refs=("TP-1.D.K:87", "TP-1.D.K:88"))
+    amount = f.add("90", "Cotisation personnelle", min(reduced, reduced_maximum),
+                   "minimum des lignes 86 et 89", refs=("TP-1.D.K:86", "TP-1.D.K:89"))
+    f.add("98", "Cotisation au régime d'assurance médicaments du Québec", amount,
+          "cotisation personnelle seulement; chaque conjoint paie sa propre cotisation",
           refs=("TP-1.D.K:90",))
     return f
 
@@ -313,4 +348,113 @@ def schedule_e(params: dict, quebec: Form, minimum: Form) -> Form:
                 refs=("TP-1.D.E:14", "TP-1.D.E:15"))
     f.add("18", "Impôt du Québec", tax, "aucune déduction relative aux opérations forestières",
           refs=("TP-1.D.E:16",))
+    return f
+
+
+def capital_gains(tp: Taxpayer, params: dict) -> Form | None:
+    """Annexe G, partie F : gain net fourni et inclusion, sans inventer de transactions."""
+    if tp.capital_gains <= 0:
+        return None
+    f = Form.from_parameters("TP-1.D.G", params)
+    net = f.add("94.1", "Gains (ou perte nette) en capital", tp.capital_gains,
+                "gain net fourni avant inclusion; ventilation par bien et provisions non modélisées")
+    rate = f.add("107", "Taux d'inclusion", params["federal"]["capital_gains"]["inclusion_rate"],
+                 "taux exprimé comme fraction", params=("federal.capital_gains.inclusion_rate",))
+    taxable = f.add("107.1", "Montant de la ligne 94.1 multiplié par le taux d'inclusion", net * rate,
+                    refs=("TP-1.D.G:94.1", "TP-1.D.G:107"))
+    f.add("108", "Gains en capital imposables (ou perte nette en capital)", taxable,
+          "aucun gain à inclusion de 100 % dans les entrées du moteur", refs=("TP-1.D.G:107.1",))
+    return f
+
+
+def qpp_employment(tp: Taxpayer, params: dict, quebec: Form, qpp: rules.QppContributions) -> Form | None:
+    """Annexe U, partie B : déduction du salarié québécois sans trop-perçu ni prorata mensuel.
+
+    La ventilation des retenues simulées vient de la même règle que l'annexe 8. Les formes
+    algébriques conservent exactement les montants du moteur, sans arrondir entre les lignes.
+    Les cas de 18 ans ou de 73 ans et plus restent signalés hors de cette extraction.
+    """
+    if qpp.enhanced <= 0 or not 19 <= tp.age <= 72:
+        return None
+    t = params["cotisations"]["qpp"]
+    f = Form.from_parameters("TP-1.D.U", params)
+    withheld = quebec.amount("98")
+    salary = float(min(tp.employment_income, t["maximum_pensionable_earnings"]))
+    exemption = float(t["basic_exemption"])
+    earnings = salary - exemption
+    maximum = float(t["maximum_pensionable_earnings"])
+    ceiling = max(0.0, maximum - exemption)
+    pensionable = quebec.amount("98.1")
+    above = max(0.0, pensionable - maximum)
+    additional = float(t["additional_maximum_pensionable_earnings"])
+    width = max(0.0, additional - maximum)
+    # Construction groupée, comme pour les cotisations fédérales de l’annexe 8.
+    f.lines = {line.number: line for line in (
+        Line("10", "Cotisation au RRQ", withheld,
+             refs=("TP-1:98",)),
+        Line("11", "Part supplémentaire de la cotisation au RRQ", qpp.first_additional,
+             "ligne 10 × taux supplémentaire / (taux de base + taux supplémentaire), sans arrondi",
+             refs=("TP-1.D.U:10",),
+             params=("cotisations.qpp.base_rate", "cotisations.qpp.first_additional_rate")),
+        Line("12", "Salaire admissible au RRQ", salary,
+             "ligne 98.1 plafonnée au maximum des gains admissibles",
+             refs=("TP-1:98.1",),
+             params=("cotisations.qpp.maximum_pensionable_earnings",)),
+        Line("13", "Exemption personnelle au RRQ", exemption,
+             "montant annuel, sans prorata mensuel",
+             params=("cotisations.qpp.basic_exemption",)),
+        Line("14", "Montant de la ligne 12 moins celui de la ligne 13", earnings,
+             refs=("TP-1.D.U:12", "TP-1.D.U:13")),
+        Line("14.1", "Maximum des gains admissibles", maximum,
+             params=("cotisations.qpp.maximum_pensionable_earnings",)),
+        Line("14.2", "Montant de la ligne 13", exemption,
+             refs=("TP-1.D.U:13",)),
+        Line("14.3", "Montant de la ligne 14.1 moins celui de la ligne 14.2", ceiling,
+             refs=("TP-1.D.U:14.1", "TP-1.D.U:14.2")),
+        Line("14.4", "Moins élevé des montants des lignes 14 et 14.3", min(earnings, ceiling),
+             refs=("TP-1.D.U:14", "TP-1.D.U:14.3")),
+        Line("15", "Première cotisation supplémentaire maximale", qpp.first_additional,
+             refs=("TP-1.D.U:14.4",),
+             params=("cotisations.qpp.first_additional_rate",)),
+        Line("16", "Moins élevé des montants des lignes 11 et 15", qpp.first_additional,
+             refs=("TP-1.D.U:11", "TP-1.D.U:15")),
+        Line("17", "Cotisation au RRQ", withheld,
+             refs=("TP-1:98",)),
+        Line("17.1", "Montant de la ligne 14.4", min(earnings, ceiling),
+             refs=("TP-1.D.U:14.4",)),
+        Line("17.2", "Cotisation de base et première cotisation supplémentaire requises", qpp.base + qpp.first_additional,
+             "somme des deux composantes non arrondies",
+             refs=("TP-1.D.U:17.1",),
+             params=("cotisations.qpp.base_rate", "cotisations.qpp.first_additional_rate")),
+        Line("17.3", "Montant de la ligne 17 moins celui de la ligne 17.2", 0.0,
+             "retenues simulées égales aux cotisations requises",
+             refs=("TP-1.D.U:17", "TP-1.D.U:17.2")),
+        Line("17.4", "Cotisation supplémentaire au RRQ", qpp.second_additional,
+             refs=("TP-1:98.2",)),
+        Line("17.5", "Total des montants des lignes 17.3 et 17.4", qpp.second_additional,
+             refs=("TP-1.D.U:17.3", "TP-1.D.U:17.4")),
+        Line("18.5", "Salaire admissible au RRQ", pensionable,
+             refs=("TP-1:98.1",)),
+        Line("18.6", "Montant de la ligne 14.1", maximum,
+             refs=("TP-1.D.U:14.1",)),
+        Line("18.7", "Montant de la ligne 18.5 moins celui de la ligne 18.6", above,
+             refs=("TP-1.D.U:18.5", "TP-1.D.U:18.6")),
+        Line("18.8", "Maximum supplémentaire des gains admissibles", additional,
+             params=("cotisations.qpp.additional_maximum_pensionable_earnings",)),
+        Line("18.9", "Montant de la ligne 14.1", maximum,
+             refs=("TP-1.D.U:14.1",)),
+        Line("19", "Montant de la ligne 18.8 moins celui de la ligne 18.9", width,
+             refs=("TP-1.D.U:18.8", "TP-1.D.U:18.9")),
+        Line("20", "Moins élevé des montants des lignes 18.7 et 19", min(above, width),
+             refs=("TP-1.D.U:18.7", "TP-1.D.U:19")),
+        Line("21", "Deuxième cotisation supplémentaire maximale", qpp.second_additional,
+             refs=("TP-1.D.U:20",),
+             params=("cotisations.qpp.second_additional_rate",)),
+        Line("22", "Moins élevé des montants des lignes 17.5 et 21", qpp.second_additional,
+             refs=("TP-1.D.U:17.5", "TP-1.D.U:21")),
+        Line("22.1", "Montant de la ligne 16", qpp.first_additional,
+             refs=("TP-1.D.U:16",)),
+        Line("23", "Déduction pour cotisation au RRQ pour un revenu d'emploi", qpp.enhanced,
+             refs=("TP-1.D.U:22", "TP-1.D.U:22.1")),
+    )}
     return f

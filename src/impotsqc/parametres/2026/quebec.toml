@@ -90,14 +90,22 @@ ref = "Bulletin 2025-8 (2025-11-25), notes 17-18; seuils au Tableau 3. Exclusion
 status = "published"
 
 [drug_insurance]
-# Annexe K, ligne 447. Particulier sans conjoint. La cotisation calculée est plafonnée à la prime
-# annuelle en vigueur au 31 décembre (`rate_cap`), puis au maximum de l'année (`annual_maximum`).
+# Annexe K, ligne 447. Paramètres provisoires : extrapolation 2025 en attendant le formulaire 2026.
 rate_cap = 789
 annual_maximum = 777
 exemption_single = 20_300
 first_bracket_width = 5_000
 first_rate_single = 0.0784
 second_rate_single = 0.1176
+exemption_couple = 32_900
+child_exemption_single_one = 12_600
+child_exemption_single_multiple = 16_910
+child_exemption_couple_one = 4_310
+child_exemption_couple_multiple = 8_290
+first_rate_couple = 0.0393
+second_rate_couple = 0.0589
+monthly_maximum_first_half = 63.83
+monthly_maximum_second_half = 65.75
 source = "https://www.ramq.gouv.qc.ca/fr/salle-presse/communiques/2026-06-30/ajustement-tarifs-personnes-couvertes-regime-public-assurance"
-ref = "RAMQ (2026-06-30) : prime annuelle de 789 $ dès juillet 2026, 766 $ avant. Maximum de l'année = 6 × 63,83 + 6 × 65,75 = 777,48 $, arrondi au dollar comme sur l'Annexe K 2025 (754,98 $ imprimé 755 $). Exemption : 19 890 $ (Annexe K 2025, ligne 40) indexée de 2,05 %, estimation. Taux : Annexe K 2025, ligne 80"
+ref = "RAMQ (2026-06-30) : prime annuelle de 789 $ dès juillet 2026, 766 $ avant. Maximum de l'année = 6 × 63,83 + 6 × 65,75 = 777,48 $, arrondi au dollar comme sur l'Annexe K 2025 (754,98 $ imprimé 755 $). Exemption : 19 890 $ (Annexe K 2025, ligne 41) indexée de 2,05 %, estimation. Conjoint et enfants : montants 2025 indexés de 2,05 %, arrondis au 10 $ le plus proche, estimations. Indexation : https://cdn-contenu.quebec.ca/cdn-contenu/adm/min/finances/publications-adm/parametres/AUTFR_RegimeImpot2026.pdf. Taux et prorata : Annexe K 2025, lignes 80, 85 et 88 (https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.K%282025-12%29.pdf), reconduits provisoirement. Plafonds mensuels : 766 / 12 = 63,83 et 789 / 12 = 65,75"
 status = "unpublished"

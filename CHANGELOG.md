@@ -4,6 +4,71 @@ Versions selon SemVer. Une entrée **« change les résultats »** signale toute
 déplace un montant calculé pour une année déjà publiée; elle cite la source officielle qui la
 justifie.
 
+## 0.5.0 — 2026-10-04
+
+**Change l'API et change les résultats.** La couverture RAMQ annuelle et l'absence de conjoint
+ne sont plus présumées. Les paramètres numériques préexistants restent inchangés; les nouveaux
+paramètres de ménage et de prorata complètent les tables annuelles.
+
+- `Taxpayer` ajoute `has_spouse`, `spouse_net_income`, `drug_plan_exempt_months` et
+  `drug_plan_dependent_children`. Leur valeur par défaut `None` signifie « inconnu ».
+  Les mois sont des entiers uniques de 1 à 12; une liste JSON est normalisée en tuple immuable.
+- **Migration requise** : appeler `required_questions(tp)` et recueillir les réponses.
+  `compute` lève `MissingInformationError` si elles manquent, avec `questions` et `to_dict()`
+  pour les présenter à l'utilisateur. Aucun montant ni déclaration partielle n'est rendu.
+  L’appel direct à `rules.drug_insurance_premium` exige aussi les arguments nommés
+  `has_spouse`, `dependent_children` et `exempt_months`. Pour reproduire le profil historique
+  sans conjoint ni enfant, assujetti douze mois,
+  fournir explicitement `has_spouse=False`, `drug_plan_exempt_months=()` et
+  `drug_plan_dependent_children=0`. Ne pas appliquer ces réponses par défaut aux utilisateurs.
+- L'annexe K reprend le revenu net du conjoint, les exemptions pour enfants, le barème
+  avec/sans conjoint et les réductions distinctes des deux semestres. Une assurance privée de
+  base pendant douze mois donne zéro; chaque conjoint paie uniquement sa cotisation personnelle.
+  Source : [annexe K 2025, parties A à C, lignes 36 à 98](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.K%282025-12%29.pdf).
+- `has_spouse` est indépendant de `lives_alone` : voir la [définition du conjoint au 31 décembre](https://www.revenuquebec.ca/fr/definitions/conjointe-ou-conjoint-au-31-decembre/).
+  Le revenu du conjoint entre aussi dans la réduction de l'annexe B (lignes 12 à 18), selon
+  [l'annexe B 2025](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf).
+  Les droits du conjoint dans B, leur répartition, les autres crédits et transferts entre
+  conjoints restent hors portée et déclenchent un avertissement explicite.
+- RAMQ 2026 : les exemptions familiales sont des estimations indexées, les taux et le prorata
+  reprennent 2025. Le statut demeure `unpublished`; un avertissement est aussi rendu lorsque
+  l'exemption estimée produit zéro. Les couvertures exemptant les douze mois ne consultent pas
+  ces paramètres. Sources et méthode d'estimation dans `parametres/2026/quebec.toml`.
+- 362 tests réussis, dont 49 nouveaux cas, l'oracle local, la continuité et le revenu net
+  croissant; 260 réussis et 22 sautés dans une copie sans oracle. Les profils historiques sont
+  explicites, sans changer les valeurs attendues.
+  Comparaison exacte supplémentaire : 500 profils fictifs, 92 540 montants et tous les totaux
+  inchangés lorsque les anciennes hypothèses sont confirmées.
+- Performance : salarié type 35,410 → 36,466 µs (+3,0 %); cinq profils mesurés, surcoût
+  maximal 1,036× pour la correction RAMQ. La branche complète atteint 1,55× `main` pour le salarié. Protocole et résultats détaillés dans `PLAN.md`.
+- Aucune clé de formulaire ou de ligne renommée. Les alias `federal` et `quebec` sont conservés.
+
+## 0.4.0 — 2026-10-04
+
+**Complète l'API, pas les montants.** Aucun taux, seuil ni montant de paramètre publié ne change.
+Aucune clé existante n'est renommée ou supprimée; les alias Python et JSON restent disponibles.
+Le retrait des alias JSON initialement annoncé après 0.3 est différé.
+
+- Ajout des formulaires `5000-S3` et `TP-1.D.G` pour le total net de gains en capital fourni et
+  son inclusion. Leurs lignes `19900` et `108` alimentent le T1 `12700` et le TP-1 `139`.
+  Les dispositions individuelles, catégories de biens et provisions ne sont pas reconstituées.
+- Ajout de `5005-S8` (parties 1 et 2) et `TP-1.D.U` (partie B) pour les cotisations RRQ d'un
+  salarié québécois de 19 à 72 ans, assujetti toute l'année. Les lignes `P2-35` et `P2-47` de
+  l'annexe 8 alimentent le T1 `30800` et `22215`; la ligne `23` de U alimente le TP-1 `248`.
+  Les retenues simulées égalent les cotisations requises; aucun trop-perçu n'est inventé.
+- Ajout de TP-1 `98.1`, salaire admissible simulé, source des calculs de l'annexe U.
+- Les métadonnées 2025/2026, les références et les paramètres cités suivent le modèle de 0.3.
+  Seules les parties couvertes sont construites. La construction groupée de l'annexe 8 limite
+  le coût des lignes supplémentaires, sans nouvelle dépendance ni classe de formulaire.
+- À 18 ans et dès 73 ans, les annexes RRQ sont omises et un avertissement explicite signale
+  les limites du calcul annuel hérité. **Aucune correction fiscale n'est appliquée.**
+- Tests : cas chiffrés des deux plafonds RRQ, reports exacts, absence des formulaires non
+  applicables, métadonnées, références et JSON. Comparaison exacte de 2 049 déclarations
+  fictives avec 0.3.0 : 320 044 montants de lignes et tous les totaux inchangés. Suite complète :
+  313 tests réussis avec l'oracle local; 211 réussis et 22 sautés sans les relevés locaux.
+- Performance : 35,994 µs pour le salarié type, contre 24,414 µs en 0.3.0; surcoût maximal
+  mesuré de 1,47× sur les cinq profils. Protocole et résultats détaillés dans `PLAN.md`.
+
 ## 0.3.0 — 2026-10-04
 
 **Change l'API, pas les montants.** Aucun fichier de paramètres fiscaux déjà publié n'est modifié.

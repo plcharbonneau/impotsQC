@@ -60,8 +60,9 @@ LIGNES = {  # champ du relevé -> (formulaire, ligne)
 
 
 def contribuable(year: int, entree: dict) -> Taxpayer:
-    """Contribuable impotsqc équivalent à une entrée du relevé."""
-    return Taxpayer(year=year, age=entree["age"], **{ENTREES[k]: v for k, v in entree.items() if k in ENTREES})
+    """Profil historique du relevé : sans conjoint ni enfant, aucune exemption mensuelle RAMQ."""
+    return Taxpayer(has_spouse=False, drug_plan_exempt_months=(), drug_plan_dependent_children=0,
+                    year=year, age=entree["age"], **{ENTREES[k]: v for k, v in entree.items() if k in ENTREES})
 
 
 def valeurs(r) -> dict[str, float]:

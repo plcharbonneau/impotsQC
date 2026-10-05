@@ -24,7 +24,9 @@ def federal_return(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
     # Étape 2 — Revenu total
     eligible, other = rules.grossed_up_dividends(tp.eligible_dividends, tp.other_dividends, fed["dividends"])
     rrif_65 = tp.rrif_income if tp.age >= fed["pension_amount"]["minimum_age_for_rrif"] else 0.0
-    incl = fed["capital_gains"]["inclusion_rate"]
+    annex_3 = federal_schedules.capital_gains(tp, params)
+    if annex_3 is not None:
+        forms[annex_3.code] = annex_3
     income = [
         f.add("10100", "Revenus d'emploi", tp.employment_income),
         f.add("11300", "Pension de la sécurité de la vieillesse (PSV)", tp.oas_pension),
@@ -35,8 +37,8 @@ def federal_return(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
               "dividendes réels majorés de 38 % (déterminés) et de 15 % (autres)",
               params=("federal.dividends.eligible_gross_up", "federal.dividends.other_gross_up")),
         f.add("12100", "Intérêts et autres revenus de placements", tp.interest_income),
-        f.add("12700", "Gains en capital imposables", tp.capital_gains * incl, f"annexe 3 : gain × {incl:g}",
-              params=("federal.capital_gains.inclusion_rate",)),
+        f.add("12700", "Gains en capital imposables", annex_3.amount("19900") if annex_3 is not None else 0.0,
+              "annexe 3, ligne 19900 si applicable", refs=("5000-S3:19900",) if annex_3 is not None else ()),
         f.add("12900", "Revenus d'un régime enregistré d'épargne-retraite (REER)", tp.rrsp_income),
         f.add("13000", "Autres revenus", tp.rrif_income - rrif_65, "FERR avant 65 ans",
               params=("federal.pension_amount.minimum_age_for_rrif",)),
@@ -56,10 +58,16 @@ def federal_return(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
                       "T1:13000",
                   ))
 
+    annex_8 = federal_schedules.qpp_employment(tp, params, qpp)
+    if annex_8 is not None:
+        forms[annex_8.code] = annex_8
+
     # Étapes 3 et 4 — Revenu net et revenu imposable
     deductions = f.add("20800", "Déduction pour REER", tp.rrsp_deduction)
     deductions += f.add("22215", "Déduction pour les cotisations bonifiées au RPC ou au RRQ sur un revenu d'emploi",
-                        qpp.enhanced, "premier supplément (1/6,30 de la cotisation) + deuxième supplément",
+                        annex_8.amount("P2-47") if annex_8 is not None else qpp.enhanced,
+                        "annexe 8, partie 2, ligne 47 si applicable",
+                        refs=("5005-S8:P2-47",) if annex_8 is not None else (),
                         params=(
                             "cotisations.qpp.basic_exemption",
                             "cotisations.qpp.maximum_pensionable_earnings",
@@ -99,7 +107,10 @@ def federal_return(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
                   "federal.age_amount.reduction_rate",
                   "federal.age_amount.minimum_age",
               )),
-        f.add("30800", "Cotisations de base au RPC ou au RRQ pour les revenus d'emploi", qpp.base, "taux de base de 5,30 %",
+        f.add("30800", "Cotisations de base au RPC ou au RRQ pour les revenus d'emploi",
+              annex_8.amount("P2-35") if annex_8 is not None else qpp.base,
+              "annexe 8, partie 2, ligne 35 si applicable",
+              refs=("5005-S8:P2-35",) if annex_8 is not None else (),
               params=(
                   "cotisations.qpp.basic_exemption",
                   "cotisations.qpp.maximum_pensionable_earnings",

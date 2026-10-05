@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Pier-Luc Charbonneau
-"""T691 : parties utiles au calcul courant, numéros préfixés par la partie du document."""
+"""Annexes fédérales : parties couvertes, avec la numérotation des documents officiels."""
 
 from __future__ import annotations
 
 from . import rules
-from .model import Form, Taxpayer
+from .model import Form, Line, Taxpayer
 
 
 def minimum_tax(tp: Taxpayer, params: dict, federal: Form, dividend_gross_up: float) -> Form | None:
@@ -71,4 +71,107 @@ def minimum_tax(tp: Taxpayer, params: dict, federal: Form, dividend_gross_up: fl
         f.add("P6-14", "Impôt fédéral à payer dans le cadre de l'IMR", amt.minimum_amount,
               "aucune surtaxe ni impôt sur le revenu fractionné",
               refs=("T691:P6-4",))
+    return f
+
+
+def capital_gains(tp: Taxpayer, params: dict) -> Form | None:
+    """Annexe 3, total net fourni et inclusion; aucune ventilation des transactions n'est inventée."""
+    if tp.capital_gains <= 0:
+        return None
+    f = Form.from_parameters("5000-S3", params)
+    f.add("19700", "Total des gains ou pertes en capital", tp.capital_gains,
+          "ligne 21 : gain net fourni, avant inclusion; détail des dispositions non fourni")
+    f.add("22", "Montant de la ligne 21", tp.capital_gains, refs=("5000-S3:19700",))
+    rate = f.add("23", "Taux d'inclusion", params["federal"]["capital_gains"]["inclusion_rate"],
+                 "taux exprimé comme fraction", params=("federal.capital_gains.inclusion_rate",))
+    taxable = f.add("24", "Montant de la ligne 22 multiplié par le pourcentage de la ligne 23",
+                    tp.capital_gains * rate, refs=("5000-S3:22", "5000-S3:23"))
+    f.add("19900", "Total des gains en capital imposables ou des pertes en capital nettes", taxable,
+          "ligne 26 : aucun gain à inclusion de 100 % dans les entrées du moteur", refs=("5000-S3:24",))
+    return f
+
+
+def qpp_employment(tp: Taxpayer, params: dict, qpp: rules.QppContributions) -> Form | None:
+    """Annexe 8, emploi québécois toute l'année, retenues simulées égales aux cotisations requises.
+
+    Les choix de cessation, trop-perçus et proratas mensuels ne sont pas modélisés. À 18 ans
+    et dès 73 ans, les calculs historiques restent au T1 sans produire une annexe trompeuse.
+    """
+    if tp.employment_income <= 0 or not 19 <= tp.age <= 72:
+        return None
+    t = params["cotisations"]["qpp"]
+    f = Form.from_parameters("5005-S8", params)
+    maximum = float(t["maximum_pensionable_earnings"])
+    additional = float(t["additional_maximum_pensionable_earnings"])
+    exemption = float(t["basic_exemption"])
+    pensionable = float(min(tp.employment_income, additional))
+    above = max(0.0, pensionable - maximum)
+    capped = float(min(tp.employment_income, maximum))
+    # Construction groupée des lignes immuables : même modèle, moins d’appels par déclaration.
+    f.lines = {line.number: line for line in (
+        Line("P1-A", "Nombre de mois pendant lesquels le RRQ s'est appliqué", 12.0,
+             "hypothèse d'emploi québécois assujetti toute l'année, sans choix de cessation"),
+        Line("P1-B", "Maximum des gains ouvrant droit à pension", maximum,
+             refs=("5005-S8:P1-A",),
+             params=("cotisations.qpp.maximum_pensionable_earnings",)),
+        Line("P1-D", "Maximum supplémentaire des gains ouvrant droit à pension", additional,
+             refs=("5005-S8:P1-A",),
+             params=("cotisations.qpp.additional_maximum_pensionable_earnings",)),
+        Line("P1-E", "Exemption de base maximale", exemption,
+             refs=("5005-S8:P1-A",),
+             params=("cotisations.qpp.basic_exemption",)),
+        Line("P2-1", "Total des gains ouvrant droit à pension du RRQ", pensionable,
+             "case 26 simulée d'un feuillet T4, plafonnée au maximum supplémentaire",
+             refs=("T1:10100", "5005-S8:P1-D")),
+        Line("P2-2", "Moins élevé des montants de la ligne D et de la ligne 1", pensionable,
+             refs=("5005-S8:P1-D", "5005-S8:P2-1")),
+        Line("P2-3", "Montant de la ligne B", maximum,
+             refs=("5005-S8:P1-B",)),
+        Line("P2-4", "Gains soumis aux deuxièmes cotisations supplémentaires", above,
+             refs=("5005-S8:P2-2", "5005-S8:P2-3")),
+        Line("P2-5", "Montant de la ligne 2 moins celui de la ligne 4", capped,
+             refs=("5005-S8:P2-2", "5005-S8:P2-4")),
+        Line("P2-6", "Montant de la ligne E", exemption,
+             refs=("5005-S8:P1-E",)),
+        Line("P2-7", "Gains soumis aux cotisations de base et premières cotisations supplémentaires", max(0.0, capped - exemption),
+             refs=("5005-S8:P2-5", "5005-S8:P2-6")),
+        Line("P2-8", "Total des cotisations de base et premières cotisations supplémentaires réelles", qpp.base + qpp.first_additional,
+             "case 17 simulée : retenues égales aux cotisations requises",
+             refs=("5005-S8:P2-11", "5005-S8:P2-12")),
+        Line("P2-9", "Cotisations de base réelles", qpp.base,
+             "part de base calculée sans arrondi intermédiaire",
+             refs=("5005-S8:P2-8",),
+             params=("cotisations.qpp.base_rate", "cotisations.qpp.first_additional_rate")),
+        Line("P2-10", "Premières cotisations supplémentaires réelles", qpp.first_additional,
+             "part supplémentaire calculée sans soustraction de montants arrondis",
+             refs=("5005-S8:P2-8", "5005-S8:P2-9")),
+        Line("P2-11", "Cotisations de base requises", qpp.base,
+             refs=("5005-S8:P2-7",),
+             params=("cotisations.qpp.base_rate",)),
+        Line("P2-12", "Premières cotisations supplémentaires requises", qpp.first_additional,
+             refs=("5005-S8:P2-7",),
+             params=("cotisations.qpp.first_additional_rate",)),
+        Line("P2-13", "Cotisations de base et premières cotisations supplémentaires requises", qpp.base + qpp.first_additional,
+             refs=("5005-S8:P2-11", "5005-S8:P2-12")),
+        Line("P2-21", "Total des deuxièmes cotisations supplémentaires réelles", qpp.second_additional,
+             "case 17A simulée : retenue égale à la cotisation requise",
+             refs=("5005-S8:P2-22",)),
+        Line("P2-22", "Deuxièmes cotisations supplémentaires requises", qpp.second_additional,
+             refs=("5005-S8:P2-4",),
+             params=("cotisations.qpp.second_additional_rate",)),
+        Line("P2-24", "Montant de la ligne 20 plus celui de la ligne 23", 0.0,
+             "retenues simulées égales aux cotisations requises; différences nulles aux lignes 16 à 23",
+             refs=("5005-S8:P2-8", "5005-S8:P2-13", "5005-S8:P2-21", "5005-S8:P2-22")),
+        Line("P2-35", "Cotisations de base au RRQ pour les revenus d'emploi", qpp.base,
+             "partie 2b : aucun excédent ni manque à répartir; montant de la ligne 11",
+             refs=("5005-S8:P2-11", "5005-S8:P2-24")),
+        Line("P2-42", "Premières cotisations supplémentaires admises", qpp.first_additional,
+             "partie 2b : montant de la ligne 12, sans rajustement",
+             refs=("5005-S8:P2-12", "5005-S8:P2-24")),
+        Line("P2-46", "Deuxièmes cotisations supplémentaires admises", qpp.second_additional,
+             "partie 2b : montant de la ligne 22, sans rajustement",
+             refs=("5005-S8:P2-22", "5005-S8:P2-24")),
+        Line("P2-47", "Déduction pour les cotisations bonifiées au RRQ sur un revenu d'emploi", qpp.enhanced,
+             refs=("5005-S8:P2-42", "5005-S8:P2-46")),
+    )}
     return f

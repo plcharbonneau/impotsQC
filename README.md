@@ -4,9 +4,10 @@ Calcul des déclarations de revenus **fédérale (T1)** et **du Québec (TP-1)**
 et de la **pension alimentaire pour enfants** selon le modèle québécois, pour un script ou un agent. On décrit un contribuable fictif et on obtient chaque ligne des
 formulaires et annexes : montant, numéro de ligne officiel, libellé, et la règle appliquée.
 
-> **Statut : 0.4.0 (alpha).** Les annexes 3 et 8 fédérales, G et U du Québec complètent les
-> documents accessibles par `r.forms`. Aucun montant existant de 0.3.0 ne change. Les règles
-> fiscales et leurs limites sont conservées; voir [PLAN.md](PLAN.md#points-dinterprétation).
+> **Statut : 0.5.0 (alpha).** Le calcul exige maintenant une réponse explicite sur le conjoint
+> fiscal et les mois exemptés de cotisation RAMQ. L'annexe K utilise le revenu familial, les
+> enfants admissibles et les deux semestres. Les paramètres RAMQ 2026 restent provisoires.
+> Voir les [limites de calcul](PLAN.md#assurance-medicaments-050).
 
 ## Portée
 
@@ -14,15 +15,19 @@ formulaires et annexes : montant, numéro de ligne officiel, libellé, et la rè
 - Situations : **salarié** (emploi, cotisations RRQ/AE/RQAP, déduction REER, placements) et
   **retraité** (FERR et REER, RRQ, PSV et son remboursement, crédits d'âge, de pension, de
   personne vivant seule, de prolongation de carrière), dividendes et gains en capital.
-- Hors portée pour l'instant : travail autonome, couple et transferts entre conjoints, enfants,
-  frais médicaux, dons, crédits remboursables, acomptes provisionnels.
+- Assurance médicaments : personne avec ou sans conjoint fiscal, revenu net du conjoint,
+  enfants admissibles et mois exemptés confirmés. Chaque personne paie sa propre cotisation.
+- Hors portée pour l'instant : travail autonome, crédits et transferts entre conjoints,
+  fractionnement de pension, crédits pour enfants, frais médicaux, dons, crédits remboursables,
+  acomptes provisionnels. Le calcul global d'un couple reste incomplet et porte un avertissement.
 
 ## Usage
 
 ```python
 from impotsqc import Taxpayer, compute
 
-r = compute(Taxpayer(year=2026, age=66, rrif_income=30_000, oas_pension=8_900))
+r = compute(Taxpayer(year=2026, age=66, rrif_income=30_000, oas_pension=8_900,
+                     has_spouse=False, drug_plan_exempt_months=(), drug_plan_dependent_children=0))
 r.forms["T1"]["23600"].amount           # revenu net fédéral
 r.forms["TP-1"]["275"].amount            # revenu net du Québec
 r.forms["TP-1.D.B"]["34"].amount        # résultat de l'annexe B
@@ -44,7 +49,7 @@ Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée 
 | `TP-1.D.U` | Déduction RRQ du salarié | Cotisation bonifiée positive, 19 à 72 ans |
 | `TP-1.D.B` | Allègements fiscaux | Âge admissible, personne vivant seule ou revenu de retraite |
 | `TP-1.D.F` | Cotisation au FSS | Revenu assujetti au-dessus du premier seuil |
-| `TP-1.D.K` | Assurance médicaments | Revenu net au-dessus de l'exemption, assurance publique annuelle présumée |
+| `TP-1.D.K` | Assurance médicaments | Revenu familial au-dessus de l'exemption de base et au moins un mois non exempté |
 | `TP-752.PC` | Prolongation de carrière | 65 ans et plus et revenu de travail positif |
 | `T691` | IMR fédéral | Revenu imposable rajusté au-dessus de l'exemption |
 | `TP-776.42`, `TP-1.D.E` | IMR du Québec et redressement | Revenu imposable modifié au-dessus de l'exemption |
@@ -58,7 +63,8 @@ la grille de retraite. La dernière ligne de l'annexe K est `"98"` (cotisation p
 Pour un salarié ayant réalisé un gain :
 
 ```python
-r = compute(Taxpayer(year=2025, age=40, employment_income=80_000, capital_gains=20_000))
+r = compute(Taxpayer(year=2025, age=40, employment_income=80_000, capital_gains=20_000,
+                     has_spouse=False, drug_plan_exempt_months=(), drug_plan_dependent_children=0))
 r.forms["5000-S3"]["19900"].amount     # 10 000 $, repris au T1, ligne 12700
 r.forms["TP-1.D.G"]["108"].amount      # 10 000 $, repris au TP-1, ligne 139
 r.forms["5005-S8"]["P2-35"].amount     # crédit RRQ de base, repris au T1, ligne 30800
@@ -88,13 +94,64 @@ numéro, son libellé, son montant, sa règle, ses `refs` (`"CODE:ligne"`) et se
 `r.to_dict()` contient `year`, `taxpayer`, `forms`, `summary` et `warnings`. Chaque entrée de
 `forms` contient les métadonnées du document et un dictionnaire `lines`; chaque ligne contient
 `label`, `amount`, `rule`, `refs` et `params`. Les montants sont arrondis au cent dans le JSON
-seulement. Les clés historiques `federal` et `quebec` restent disponibles en 0.4
+seulement. Les clés historiques `federal` et `quebec` restent disponibles en 0.5
 comme dictionnaires de lignes; leur retrait est différé. Les anciennes clés préfixées sont déplacées dans leurs annexes :
 voir la [table de migration](CHANGELOG.md#030--2026-10-04).
 
 La numérotation et les versions des formulaires fiscaux sont celles de 2025. Pour l'année 2026,
 les métadonnées portent le statut `rule_2025`, avec les paramètres fiscaux de 2026; les PDF 2026
 ne sont pas encore utilisés.
+
+### Questions à poser avant le calcul
+
+`compute` ne présume plus que la personne est sans conjoint et assujettie à la RAMQ toute
+l'année. `required_questions` donne les questions encore nécessaires, indexées par les noms
+des champs. Si elles restent sans réponse, `compute` lève `MissingInformationError` avant de
+produire des formulaires ou un total. La librairie n'appelle jamais `input()`.
+
+```python
+from dataclasses import replace
+from impotsqc import Taxpayer, compute, required_questions, MissingInformationError
+
+tp = Taxpayer(year=2025, age=40, interest_income=25_000)
+questions = required_questions(tp)       # questions en français, avec les sources officielles
+try:
+    compute(tp)
+except MissingInformationError as error:
+    payload = error.to_dict()           # {"error": "missing_information", "questions": {...}}
+
+# Après avoir obtenu les réponses, ici pour un ménage fictif :
+tp = replace(tp, has_spouse=True, spouse_net_income=12_000,
+             drug_plan_exempt_months=(1, 2, 3), drug_plan_dependent_children=0)
+r = compute(tp)
+r.forms["TP-1.D.K"]["40"].amount       # revenu familial : 37 000 $
+r.forms["TP-1.D.K"]["62"].amount       # 3 mois exemptés
+r.quebec["447"].amount                 # cotisation personnelle : 140,301 $, sans arrondi interne
+```
+
+- `has_spouse=None` signifie inconnu; `False` confirme l'absence de conjoint fiscal au
+  31 décembre. Ce statut suit les [définitions de Revenu Québec](https://www.revenuquebec.ca/fr/definitions/conjointe-ou-conjoint-au-31-decembre/),
+  notamment les unions de fait, séparations et décès. Il ne se déduit jamais de `lives_alone`.
+  Ce dernier décrit l'admissibilité au montant pour personne vivant seule de l'annexe B.
+- Si `has_spouse=True`, `spouse_net_income` est requis, même lorsqu'il est nul. Fournir la
+  **ligne 275 du TP-1** du conjoint, et non son salaire brut ou son revenu net fédéral.
+- `drug_plan_exempt_months=None` signifie inconnu. `()` ou `[]` confirme zéro mois exempté;
+  `tuple(range(1, 13))` confirme douze mois exemptés et rend la cotisation nulle. Les mois
+  mixtes sont des entiers uniques de 1 à 12; une liste JSON est aussi acceptée.
+- Les mois exemptés comprennent la couverture **privée de base**, personnelle ou par un
+  conjoint/parent, et les autres exemptions confirmées selon le [guide de la ligne 447](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/400-a-447-impot-et-cotisations/ligne-447/).
+  Une journée admissible exempte le mois. Une couverture complémentaire seule ne suffit pas.
+  L'API ne détermine pas automatiquement les exemptions d'études, de SRG ou les autres cas
+  particuliers : confirmer l'admissibilité avec le guide, y compris ses cas exigeant de
+  communiquer avec Revenu Québec. Ne pas assimiler inscription à la RAMQ et obligation de cotiser.
+- `drug_plan_dependent_children` exige de confirmer le nombre d'enfants admissibles selon
+  l'annexe K, y compris zéro. Ce renseignement n'est pas demandé si les douze mois sont exemptés.
+
+Pour les couples, l'annexe K calcule uniquement la prime personnelle avec le barème familial.
+Le choix de payer celle du conjoint sur la même déclaration n'est pas modélisé. L'annexe B
+utilise également le revenu familial, mais ne calcule que les montants personnels d'âge et de
+retraite : les droits du conjoint et leur répartition restent hors portée, comme les autres
+crédits et transferts entre conjoints. Ces limites sont présentes dans `r.warnings`.
 
 ### Pension alimentaire pour enfants
 

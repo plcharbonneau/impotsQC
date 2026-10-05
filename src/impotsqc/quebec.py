@@ -163,7 +163,7 @@ def quebec_return(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
     fss = f.add("446", "Cotisation au Fonds des services de santé (FSS)",
                 annex_f.amount("82") if annex_f is not None else 0.0, "annexe F, ligne 82 si applicable",
                 refs=("TP-1.D.F:82",) if annex_f is not None else ())
-    annex_k = quebec_schedules.schedule_k(params, f)
+    annex_k = quebec_schedules.schedule_k(tp, params, f)
     if annex_k is not None:
         forms[annex_k.code] = annex_k
     drug = f.add("447", "Cotisation au régime d'assurance médicaments du Québec",

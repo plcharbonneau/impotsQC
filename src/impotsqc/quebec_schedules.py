@@ -2,8 +2,9 @@
 # Copyright (C) 2026 Pier-Luc Charbonneau
 """Annexes du Québec, avec la numérotation des documents officiels 2025.
 
-Seules les parties utilisées par le moteur sont remplies. Les situations hors portée (conjoint,
-reports, autres déductions) restent hors portée : l'extraction ne corrige pas les règles de 0.2.
+Seules les parties utilisées par le moteur sont remplies. La RAMQ tient compte du conjoint
+fiscal, des enfants admissibles et des mois exemptés déclarés. Les autres limites sont documentées
+et signalées dans les avertissements du résultat.
 Une fonction rend None avant de construire un formulaire qui ne s'applique pas.
 """
 
@@ -14,7 +15,10 @@ from .model import Form, Line, Taxpayer
 
 
 def schedule_b(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
-    """Annexe B, parties A et B et grille de retraite; particulier sans conjoint."""
+    """Annexe B : montants personnels d'âge et de retraite, réduction selon le revenu familial.
+
+    Les droits du conjoint et la répartition du montant entre conjoints restent hors portée;
+    un avertissement de `compute` signale cette limite pour les couples."""
     t = params["quebec"]["schedule_b"]
     retirement = quebec.amount("122")
     if not (tp.lives_alone or tp.age >= t["minimum_age"] or retirement > 0):
@@ -22,13 +26,18 @@ def schedule_b(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
     f = Form.from_parameters("TP-1.D.B", params)
     net = f.add("10", "Revenu net", quebec.amount("275"),
                 refs=("TP-1:275",))
-    f.add("14", "Revenu familial", net, "sans conjoint",
-          refs=("TP-1.D.B:10",))
-    f.add("15", "Revenu familial", net,
+    family_income = net
+    family_refs = ("TP-1.D.B:10",)
+    if tp.has_spouse:
+        family_income += f.add("12", "Revenu net du conjoint", tp.spouse_net_income,
+                               "ligne 275 du TP-1 du conjoint, fournie par l'appelant")
+        family_refs += ("TP-1.D.B:12",)
+    f.add("14", "Revenu familial", family_income, refs=family_refs)
+    f.add("15", "Revenu familial", family_income,
           refs=("TP-1.D.B:14",))
     threshold = f.add("16", "Seuil de réduction", t["reduction_threshold"],
                       params=("quebec.schedule_b.reduction_threshold",))
-    excess = f.add("18", "Revenu familial excédant le seuil", max(0.0, net - threshold),
+    excess = f.add("18", "Revenu familial excédant le seuil", max(0.0, family_income - threshold),
                    refs=("TP-1.D.B:15", "TP-1.D.B:16"))
     alone = f.add("20", "Montant pour personne vivant seule", t["living_alone"] if tp.lives_alone else 0.0,
                   params=("quebec.schedule_b.living_alone",))
@@ -56,7 +65,7 @@ def schedule_b(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
           refs=("TP-1.D.B:18",),
           params=("quebec.schedule_b.reduction_rate",))
     amount = rules.schedule_b_amount(age=tp.age, lives_alone=tp.lives_alone, retirement_income=retirement,
-                                     family_income=net, table=t)
+                                     family_income=family_income, table=t)
     f.add("32", "Montant auquel vous avez droit", amount, "ligne 30 − ligne 31, minimum zéro",
           refs=("TP-1.D.B:30", "TP-1.D.B:31"))
     f.add("34", "Montant accordé en raison de l'âge ou pour personne vivant seule ou pour revenus de retraite",
@@ -118,68 +127,94 @@ def schedule_f(params: dict, quebec: Form) -> Form | None:
     return f
 
 
-def schedule_k(params: dict, quebec: Form) -> Form | None:
-    """Annexe K, particulier sans conjoint, assuré toute l'année comme dans l'API 0.2."""
+def schedule_k(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
+    """Annexe K : cotisation personnelle, selon les réponses sur le ménage et les mois exemptés.
+
+    `compute` vérifie les renseignements avant cet appel. Les mois exemptés sont ceux de la
+    partie B, même si la personne est inscrite au régime public. Le conjoint paie sa propre prime.
+    """
+    months = tp.drug_plan_exempt_months
+    if len(months) == 12:
+        return None
     t = params["quebec"]["drug_insurance"]
+    status = "couple" if tp.has_spouse else "single"
     net = quebec.amount("275")
-    if net <= t["exemption_single"]:
+    family_income = net + (tp.spouse_net_income if tp.has_spouse else 0.0)
+    base_exemption = t[f"exemption_{status}"]
+    if family_income <= base_exemption:
         return None
     f = Form.from_parameters("TP-1.D.K", params)
-    f.add("36", "Revenu net", net,
-          refs=("TP-1:275",))
-    f.add("40", "Revenu familial", net, "sans conjoint",
-          refs=("TP-1.D.K:36",))
-    exemption = f.add("41", "Exemption", t["exemption_single"],
-                      params=("quebec.drug_insurance.exemption_single",))
-    f.add("46", "Exemption totale", exemption, "sans conjoint ni enfant à charge",
-          refs=("TP-1.D.K:41",))
-    x = f.add("48", "Revenu servant à calculer la cotisation", net - exemption,
+    f.add("36", "Revenu net", net, refs=("TP-1:275",))
+    family_refs = ("TP-1.D.K:36",)
+    if tp.has_spouse:
+        f.add("37", "Revenu net du conjoint", tp.spouse_net_income,
+              "ligne 275 du TP-1 du conjoint, fournie par l'appelant")
+        family_refs += ("TP-1.D.K:37",)
+    f.add("40", "Revenu familial", family_income, refs=family_refs)
+    f.add("41", "Exemption", base_exemption,
+          params=(f"quebec.drug_insurance.exemption_{status}",))
+    exemption = rules.drug_insurance_exemption(has_spouse=tp.has_spouse,
+                                              dependent_children=tp.drug_plan_dependent_children, table=t)
+    exemption_refs = ("TP-1.D.K:41",)
+    if tp.drug_plan_dependent_children:
+        number = "42" if tp.has_spouse else "44"
+        count = "one" if tp.drug_plan_dependent_children == 1 else "multiple"
+        f.add(number, "Exemption pour enfants à charge", exemption - base_exemption,
+              "nombre d'enfants admissibles confirmé par l'appelant",
+              params=(f"quebec.drug_insurance.child_exemption_{status}_{count}",))
+        exemption_refs += (f"TP-1.D.K:{number}",)
+    f.add("46", "Exemption totale", exemption, refs=exemption_refs)
+    x = f.add("48", "Revenu servant à calculer la cotisation", max(0.0, family_income - exemption),
               refs=("TP-1.D.K:40", "TP-1.D.K:46"))
-    f.add("62", "Nombre de mois exemptés", 0.0, "hypothèse héritée : assuré au régime public toute l'année")
+    first = sum(month <= 6 for month in months)
+    second = len(months) - first
+    f.add("60", "Nombre de mois exemptés de janvier à juin", first, "mois confirmés par l'appelant")
+    f.add("61", "Nombre de mois exemptés de juillet à décembre", second, "mois confirmés par l'appelant")
+    f.add("62", "Nombre de mois exemptés", len(months), refs=("TP-1.D.K:60", "TP-1.D.K:61"))
     width = t["first_bracket_width"]
-    raw = x * t["first_rate_single"] if x <= width else width * t["first_rate_single"] + (x - width) * t["second_rate_single"]
+    first_rate, second_rate = t[f"first_rate_{status}"], t[f"second_rate_{status}"]
+    first_param = f"quebec.drug_insurance.first_rate_{status}"
+    second_param = f"quebec.drug_insurance.second_rate_{status}"
+    raw = x * first_rate if x <= width else width * first_rate + (x - width) * second_rate
     if raw >= t["rate_cap"]:
         premium = f.add("84", "Cotisation de la colonne applicable", t["rate_cap"], "plafond atteint",
                         refs=("TP-1.D.K:48",),
-                        params=(
-                            "quebec.drug_insurance.rate_cap",
-                            "quebec.drug_insurance.first_bracket_width",
-                            "quebec.drug_insurance.first_rate_single",
-                            "quebec.drug_insurance.second_rate_single",
-                        ))
+                        params=("quebec.drug_insurance.rate_cap", "quebec.drug_insurance.first_bracket_width",
+                                first_param, second_param))
     else:
-        f.add("77", "Revenu servant à calculer la cotisation", x,
-              refs=("TP-1.D.K:48",))
+        f.add("77", "Revenu servant à calculer la cotisation", x, refs=("TP-1.D.K:48",))
         upper = x > width
         threshold = f.add("78", "Seuil de la colonne applicable", width if upper else 0.0,
                           params=("quebec.drug_insurance.first_bracket_width",))
         excess = f.add("79", "Revenu excédant le seuil", x - threshold,
                        refs=("TP-1.D.K:77", "TP-1.D.K:78"))
-        rate = f.add("80", "Taux de la colonne applicable", t["second_rate_single"] if upper else t["first_rate_single"],
-                     "taux exprimé comme fraction",
-                     params=("quebec.drug_insurance.first_rate_single", "quebec.drug_insurance.second_rate_single"))
+        rate = f.add("80", "Taux de la colonne applicable", second_rate if upper else first_rate,
+                     "taux exprimé comme fraction", params=(second_param if upper else first_param,))
         f.add("81", "Cotisation sur le revenu excédentaire", excess * rate,
               refs=("TP-1.D.K:79", "TP-1.D.K:80"))
-        f.add("82", "Cotisation de base de la colonne applicable", width * t["first_rate_single"] if upper else 0.0,
-              params=("quebec.drug_insurance.first_bracket_width", "quebec.drug_insurance.first_rate_single"))
+        f.add("82", "Cotisation de base de la colonne applicable", width * first_rate if upper else 0.0,
+              params=("quebec.drug_insurance.first_bracket_width", first_param))
         f.add("83", "Cotisation selon le revenu", raw, "lignes 81 + 82, plafond non atteint",
-              refs=("TP-1.D.K:81", "TP-1.D.K:82"),
-              params=("quebec.drug_insurance.rate_cap",))
-        premium = f.add("84", "Cotisation de la colonne applicable", raw,
-                        refs=("TP-1.D.K:83",))
-    f.add("85", "Réduction pour les mois exemptés", 0.0, "aucun mois exempté",
-          refs=("TP-1.D.K:84", "TP-1.D.K:62"))
-    f.add("86", "Cotisation pour les mois assurés", premium,
-          refs=("TP-1.D.K:84", "TP-1.D.K:85"))
+              refs=("TP-1.D.K:81", "TP-1.D.K:82"), params=("quebec.drug_insurance.rate_cap",))
+        premium = f.add("84", "Cotisation de la colonne applicable", raw, refs=("TP-1.D.K:83",))
+    reduction = f.add("85", "Réduction pour les mois exemptés", premium * len(months) / 12,
+                      "ligne 84 × ligne 62 ÷ 12", refs=("TP-1.D.K:84", "TP-1.D.K:62"))
+    reduced = f.add("86", "Cotisation pour les mois non exemptés", premium - reduction,
+                    refs=("TP-1.D.K:84", "TP-1.D.K:85"))
     maximum = f.add("87", "Cotisation maximale pour l'année", t["annual_maximum"],
                     params=("quebec.drug_insurance.annual_maximum",))
-    f.add("88", "Réduction du maximum pour les mois exemptés", 0.0, "aucun mois exempté",
-          refs=("TP-1.D.K:62",))
-    f.add("89", "Maximum pour les mois assurés", maximum,
-          refs=("TP-1.D.K:87", "TP-1.D.K:88"))
-    amount = f.add("90", "Cotisation personnelle", rules.drug_insurance_premium(net, t), "minimum des lignes 86 et 89",
-                   refs=("TP-1.D.K:86", "TP-1.D.K:89"))
-    f.add("98", "Cotisation au régime d'assurance médicaments du Québec", amount, "sans cotisation d'un conjoint",
+    maximum_reduction = f.add("88", "Réduction du maximum pour les mois exemptés",
+                              first * t["monthly_maximum_first_half"] + second * t["monthly_maximum_second_half"],
+                              "ligne 60 × plafond du premier semestre + ligne 61 × plafond du second semestre",
+                              refs=("TP-1.D.K:60", "TP-1.D.K:61"),
+                              params=("quebec.drug_insurance.monthly_maximum_first_half",
+                                      "quebec.drug_insurance.monthly_maximum_second_half"))
+    reduced_maximum = f.add("89", "Maximum pour les mois non exemptés", max(0.0, maximum - maximum_reduction),
+                            refs=("TP-1.D.K:87", "TP-1.D.K:88"))
+    amount = f.add("90", "Cotisation personnelle", min(reduced, reduced_maximum),
+                   "minimum des lignes 86 et 89", refs=("TP-1.D.K:86", "TP-1.D.K:89"))
+    f.add("98", "Cotisation au régime d'assurance médicaments du Québec", amount,
+          "cotisation personnelle seulement; chaque conjoint paie sa propre cotisation",
           refs=("TP-1.D.K:90",))
     return f
 

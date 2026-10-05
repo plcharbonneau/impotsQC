@@ -5,18 +5,28 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
+from math import isfinite
 from typing import NamedTuple
 
 
 @dataclass(frozen=True)
 class Taxpayer:
-    """Contribuable fictif, résident du Québec au 31 décembre, sans conjoint.
+    """Contribuable fictif, résident du Québec au 31 décembre.
 
     Montants annuels en dollars de l'année `year`. `age` est l'âge au 31 décembre.
     - `rrif_income` : retraits d'un FERR ou d'un FRV (ligne 11500 à 65 ans et plus, 13000 avant);
     - `rrsp_income` : retraits d'un REER (ligne 12900; TP-1 ligne 122);
     - `eligible_dividends`, `other_dividends` : montants RÉELS, avant majoration;
     - `capital_gains` : gain en capital net réalisé, avant inclusion.
+    - `has_spouse` : conjoint fiscal au 31 décembre selon Revenu Québec, distinct de `lives_alone`;
+    - `spouse_net_income` : revenu net du conjoint au Québec (TP-1, ligne 275), même s'il est nul;
+    - `drug_plan_exempt_months` : mois exemptés de cotisation RAMQ (1 à 12), régime privé de
+      base ou autre exemption confirmée; `()` signifie aucune exemption, `None` signifie inconnu;
+    - `drug_plan_dependent_children` : enfants à charge admissibles à l'annexe K, zéro à confirmer.
+
+    Les questions manquantes sont exposées par `required_questions`; `compute` les exige avant
+    de produire un total. Chaque conjoint paie sa propre cotisation RAMQ. Les crédits et transferts
+    entre conjoints restent hors portée et sont signalés dans les avertissements.
     """
 
     year: int
@@ -32,15 +42,37 @@ class Taxpayer:
     capital_gains: float = 0.0
     rrsp_deduction: float = 0.0
     lives_alone: bool = False
+    has_spouse: bool | None = None
+    spouse_net_income: float | None = None
+    drug_plan_exempt_months: tuple[int, ...] | None = None
+    drug_plan_dependent_children: int | None = None
 
     def __post_init__(self) -> None:
-        """Refuse les montants négatifs et les âges hors d'une vie adulte."""
+        """Valide les montants, l’âge adulte et les réponses explicites sur le ménage et les mois."""
         if not 18 <= self.age <= 120:
             raise ValueError(f"âge hors de [18, 120] : {self.age}")
         for f in fields(self):
             value = getattr(self, f.name)
             if f.type == "float" and value < 0:
                 raise ValueError(f"{f.name} ne peut pas être négatif : {value}")
+        if self.has_spouse is not None and type(self.has_spouse) is not bool:
+            raise ValueError("has_spouse doit être True, False ou None (inconnu)")
+        if self.spouse_net_income is not None:
+            value = self.spouse_net_income
+            if type(value) not in (int, float) or not isfinite(value) or value < 0:
+                raise ValueError("spouse_net_income doit être un montant fini et non négatif")
+            if self.has_spouse is False:
+                raise ValueError("spouse_net_income est incompatible avec has_spouse=False")
+        children = self.drug_plan_dependent_children
+        if children is not None and (type(children) is not int or children < 0):
+            raise ValueError("drug_plan_dependent_children doit être un entier non négatif")
+        months = self.drug_plan_exempt_months
+        if months is not None:
+            if not isinstance(months, (tuple, list)) or any(type(m) is not int or not 1 <= m <= 12 for m in months):
+                raise ValueError("drug_plan_exempt_months doit contenir des mois entiers de 1 à 12")
+            if len(set(months)) != len(months):
+                raise ValueError("drug_plan_exempt_months ne peut pas contenir de doublons")
+            object.__setattr__(self, "drug_plan_exempt_months", tuple(sorted(months)))
 
 
 class Line(NamedTuple):

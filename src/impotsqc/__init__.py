@@ -3,7 +3,9 @@
 """Déclarations de revenus T1 (fédérale) et TP-1 (Québec), ligne par ligne.
 
     >>> from impotsqc import Taxpayer, compute
-    >>> r = compute(Taxpayer(year=2026, age=66, rrif_income=30_000, oas_pension=8_900))
+    >>> tp = Taxpayer(year=2026, age=66, rrif_income=30_000, oas_pension=8_900,
+    ...               has_spouse=False, drug_plan_exempt_months=(), drug_plan_dependent_children=0)
+    >>> r = compute(tp)
     >>> r.federal["23600"].amount, r.quebec["275"].amount   # revenus nets
     (38900.0, 38900.0)
 
@@ -22,10 +24,11 @@ from .federal import federal_return
 from .model import Form, Line, Taxpayer, TaxReturn
 from .parameters import PROVISIONAL_STATUSES, load_parameters
 from .quebec import quebec_return
+from .questions import MissingInformationError, required_questions
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __all__ = ["ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
-           "compute", "compute_child_support", "load_parameters"]
+           "MissingInformationError", "required_questions", "compute", "compute_child_support", "load_parameters"]
 
 _PARAMS: dict[int, dict] = {}
 
@@ -38,8 +41,11 @@ def _params(year: int) -> dict:
 
 
 def compute(taxpayer: Taxpayer) -> TaxReturn:
-    """Remplit les déclarations et les annexes applicables dans `TaxReturn.forms`."""
+    """Remplit les formulaires, ou lève `MissingInformationError` avec les questions à poser."""
     params = _params(taxpayer.year)
+    questions = required_questions(taxpayer)
+    if questions:
+        raise MissingInformationError(questions)
     qpp = rules.qpp_contributions(taxpayer.employment_income, params["cotisations"]["qpp"])
     forms: dict[str, Form] = {}
     federal = federal_return(taxpayer, params, qpp, forms=forms)
@@ -51,8 +57,14 @@ def _warnings(tp: Taxpayer, params: dict, forms: dict[str, Form]) -> tuple[str, 
     """Avertissements qui touchent CE contribuable : paramètres provisoires, règles dérivées, reports."""
     quebec = forms["TP-1"]
     out = []
-    if params["quebec"]["drug_insurance"]["status"] in PROVISIONAL_STATUSES and quebec.amount("447") > 0:
+    if params["quebec"]["drug_insurance"]["status"] in PROVISIONAL_STATUSES and len(tp.drug_plan_exempt_months) < 12:
         out.append(f"Ligne 447 (annexe K) : paramètres {tp.year} provisoires, non encore publiés.")
+    if tp.has_spouse:
+        out.append("Couple : la RAMQ utilise le revenu familial et le barème avec conjoint, "
+                   "mais chacun paie sa propre cotisation. Les crédits et transferts entre conjoints "
+                   "et le fractionnement de pension ne sont pas calculés. L'annexe B retient "
+                   "seulement vos montants d'âge et de retraite, réduits selon le revenu familial; "
+                   "les droits du conjoint et leur répartition ne sont pas calculés.")
     if (tp.age == 18 or tp.age >= 73) and tp.employment_income > 0:
         out.append("RRQ : prorata à 18 ans et fin des cotisations à 73 ans non modélisés; "
                    "calcul annuel hérité conservé, annexes 8 et U non produites pour cet âge.")

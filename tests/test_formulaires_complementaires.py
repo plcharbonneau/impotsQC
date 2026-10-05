@@ -6,7 +6,9 @@ import json
 
 import pytest
 
-from impotsqc import Taxpayer, compute
+from profiles import single_public_taxpayer
+
+from impotsqc import compute
 from impotsqc.parameters import load_parameters
 
 
@@ -14,7 +16,7 @@ from impotsqc.parameters import load_parameters
 @pytest.mark.parametrize("gain", (1, 20_000, 600_000))
 def test_inclusion_et_reports_des_gains(year, gain):
     """Le total fourni reste distinct de l'inclusion; les deux déclarations reprennent leur annexe."""
-    r = compute(Taxpayer(year=year, age=40, capital_gains=gain))
+    r = compute(single_public_taxpayer(year=year, age=40, capital_gains=gain))
     federal, quebec = r.forms["5000-S3"], r.forms["TP-1.D.G"]
     assert federal["19700"].amount == quebec["94.1"].amount == gain
     assert federal["23"].amount == quebec["107"].amount == 0.5
@@ -45,7 +47,7 @@ def test_inclusion_et_reports_des_gains(year, gain):
 ])
 def test_rrq_composantes_et_reports(year, salary, base, first, second):
     """Cotisations indépendamment chiffrées, y compris les deux plafonds, pour chaque année."""
-    r = compute(Taxpayer(year=year, age=40, employment_income=salary))
+    r = compute(single_public_taxpayer(year=year, age=40, employment_income=salary))
     s8 = r.forms["5005-S8"]
     assert s8["P1-A"].amount == 12
     assert s8["P2-11"].amount == pytest.approx(base)
@@ -74,7 +76,7 @@ def test_rrq_composantes_et_reports(year, salary, base, first, second):
 @pytest.mark.parametrize("salary", (0, 1, 3_500, 3_500.01))
 def test_presence_selon_salaire(year, salary):
     """L'annexe 8 suit le revenu d'emploi; U suit la déduction; les gains n'inventent pas de revenu."""
-    r = compute(Taxpayer(year=year, age=40, employment_income=salary))
+    r = compute(single_public_taxpayer(year=year, age=40, employment_income=salary))
     assert ("5005-S8" in r.forms) == (salary > 0)
     assert ("TP-1.D.U" in r.forms) == (salary > 3_500)
     assert "5000-S3" not in r.forms and "TP-1.D.G" not in r.forms
@@ -84,7 +86,7 @@ def test_presence_selon_salaire(year, salary):
 @pytest.mark.parametrize("age, expected", [(18, False), (19, True), (64, True), (65, True), (72, True), (73, False), (80, False)])
 def test_limites_age_rrq(age, expected):
     """Les âges dont la règle historique est incomplète sont signalés, sans changer leurs montants."""
-    r = compute(Taxpayer(year=2025, age=age, employment_income=80_000))
+    r = compute(single_public_taxpayer(year=2025, age=age, employment_income=80_000))
     assert ("5005-S8" in r.forms) == expected
     assert ("TP-1.D.U" in r.forms) == expected
     assert r.federal["30800"].amount == pytest.approx(3_661.20)
@@ -97,7 +99,7 @@ def test_limites_age_rrq(age, expected):
 @pytest.mark.parametrize("year", (2025, 2026))
 def test_json_et_provenance_du_profil_mixte(year):
     """Les quatre nouveaux documents se lisent dans le JSON; les liens et paramètres se résolvent."""
-    r = compute(Taxpayer(year=year, age=40, employment_income=80_000, capital_gains=20_000))
+    r = compute(single_public_taxpayer(year=year, age=40, employment_income=80_000, capital_gains=20_000))
     data = json.loads(json.dumps(r.to_dict()))
     params = load_parameters(year)
     for code in ("5000-S3", "5005-S8", "TP-1.D.G", "TP-1.D.U"):

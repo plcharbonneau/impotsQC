@@ -113,7 +113,8 @@ def test_capacite_de_payer():
 
 def test_revenus_tires_d_une_declaration():
     """`ParentIncome.from_tax_return` reprend l'emploi, les pensions, placements et gains imposables."""
-    tr = compute(Taxpayer(year=2026, age=66, employment_income=40_000, rrif_income=20_000, oas_pension=8_900,
+    tr = compute(Taxpayer(has_spouse=False, drug_plan_exempt_months=(), drug_plan_dependent_children=0,
+                          year=2026, age=66, employment_income=40_000, rrif_income=20_000, oas_pension=8_900,
                           eligible_dividends=1_000, interest_income=500, capital_gains=4_000))
     inc = ParentIncome.from_tax_return(tr, union_dues=300)
     assert (inc.salary, inc.pension_benefits, inc.other_income, inc.union_dues) == (40_000, 28_900, 2_000, 300)

@@ -9,7 +9,9 @@ from copy import deepcopy
 
 import pytest
 
-from impotsqc import ChildSupportCase, Line, ParentIncome, Taxpayer, compute, compute_child_support
+from profiles import single_public_taxpayer
+
+from impotsqc import ChildSupportCase, Line, ParentIncome, compute, compute_child_support
 from impotsqc.parameters import FORM_CODES, ParameterError, _check_forms, load_parameters
 
 PROFILES = [
@@ -32,7 +34,7 @@ PROFILES = [
 def declaration(request):
     """Profils fictifs couvrant présence, absence et différents chemins des annexes."""
     year, profile = request.param
-    return compute(Taxpayer(year=year, **profile))
+    return compute(single_public_taxpayer(year=year, **profile))
 
 
 def test_metadonnees_et_alias(declaration):
@@ -116,11 +118,11 @@ def test_json_correspond_aux_objets(declaration):
 @pytest.mark.parametrize("year", (2025, 2026))
 def test_formulaires_conditionnels(year):
     """Aucune annexe sans situation admissible; IMR au-delà de l'exemption, carrière dès 65 ans."""
-    empty = compute(Taxpayer(year=year, age=40))
+    empty = compute(single_public_taxpayer(year=year, age=40))
     assert set(empty.forms) == {"T1", "TP-1"}
-    salary = compute(Taxpayer(year=year, age=40, employment_income=80_000))
+    salary = compute(single_public_taxpayer(year=year, age=40, employment_income=80_000))
     assert set(salary.forms) == {"T1", "TP-1", "TP-1.D.K", "5005-S8", "TP-1.D.U"}
-    gain = compute(Taxpayer(year=year, age=50, capital_gains=600_000))
+    gain = compute(single_public_taxpayer(year=year, age=50, capital_gains=600_000))
     assert {"T691", "TP-776.42", "TP-1.D.E"} <= gain.forms.keys()
     assert gain.federal["41700"].refs == ("T1:40600", "T691:P1-103")
     assert gain.forms["T691"]["P6-14"].amount == gain.federal["41700"].amount
@@ -129,17 +131,17 @@ def test_formulaires_conditionnels(year):
     p = load_parameters(year)
     for code, table in (("T691", "federal"), ("TP-776.42", "quebec")):
         exemption = p[table]["minimum_tax"]["exemption"]
-        assert code not in compute(Taxpayer(year=year, age=40, interest_income=exemption)).forms
-        assert code in compute(Taxpayer(year=year, age=40, interest_income=exemption + 1)).forms
-    assert "TP-752.PC" not in compute(Taxpayer(year=year, age=64, employment_income=45_000)).forms
-    assert "TP-752.PC" in compute(Taxpayer(year=year, age=65, employment_income=45_000)).forms
-    assert "TP-752.PC" not in compute(Taxpayer(year=year, age=65)).forms
+        assert code not in compute(single_public_taxpayer(year=year, age=40, interest_income=exemption)).forms
+        assert code in compute(single_public_taxpayer(year=year, age=40, interest_income=exemption + 1)).forms
+    assert "TP-752.PC" not in compute(single_public_taxpayer(year=year, age=64, employment_income=45_000)).forms
+    assert "TP-752.PC" in compute(single_public_taxpayer(year=year, age=65, employment_income=45_000)).forms
+    assert "TP-752.PC" not in compute(single_public_taxpayer(year=year, age=65)).forms
 
 
 @pytest.mark.parametrize("income, rate, extra", [(22_000, 0.0784, 0), (26_000, 0.1176, 392)])
 def test_grille_annexe_k(income, rate, extra):
     """Les deux colonnes sans conjoint de l'annexe K 2025 sont lisibles ligne par ligne."""
-    r = compute(Taxpayer(year=2025, age=40, interest_income=income))
+    r = compute(single_public_taxpayer(year=2025, age=40, interest_income=income))
     k = r.forms["TP-1.D.K"]
     assert k["80"].amount == rate and k["82"].amount == extra
     assert k["81"].amount == k["79"].amount * rate
@@ -182,7 +184,7 @@ def test_ligne_immuable_et_resultats_independants():
     assert line.refs == line.params == ()
     with pytest.raises(AttributeError):
         line.amount = 20.0
-    a = compute(Taxpayer(year=2025, age=40, employment_income=80_000))
+    a = compute(single_public_taxpayer(year=2025, age=40, employment_income=80_000))
     b = compute(a.taxpayer)
     a.federal.lines.clear()
     assert b.federal["10100"].amount == 80_000

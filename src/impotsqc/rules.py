@@ -113,19 +113,43 @@ def dividend_tax_credit(eligible_grossed_up: float, other_grossed_up: float, tab
     return eligible_grossed_up * table["eligible_credit_rate"], other_grossed_up * table["other_credit_rate"]
 
 
-def drug_insurance_premium(family_income: float, table: dict) -> float:
-    """Cotisation au régime public d'assurance médicaments (Annexe K), particulier sans conjoint,
-    assuré toute l'année : taux sur le revenu familial au-delà de l'exemption, plafonné à la prime
-    annuelle en vigueur, puis au maximum de l'année."""
-    x = family_income - table["exemption_single"]
+def drug_insurance_exemption(*, has_spouse: bool, dependent_children: int, table: dict) -> float:
+    """Exemption familiale de l'annexe K, selon le conjoint fiscal et les enfants admissibles."""
+    status = "couple" if has_spouse else "single"
+    exemption = table[f"exemption_{status}"]
+    if dependent_children:
+        count = "one" if dependent_children == 1 else "multiple"
+        exemption += table[f"child_exemption_{status}_{count}"]
+    return exemption
+
+
+def drug_insurance_premium(family_income: float, table: dict, *, has_spouse: bool,
+                           dependent_children: int, exempt_months: tuple[int, ...]) -> float:
+    """Cotisation personnelle RAMQ : revenu familial, puis réduction pour les mois exemptés.
+
+    Les mois (1 à 12, sans doublons) sont ceux de la partie B de l'annexe K, confirmés par
+    l'appelant. Chacun paie sa propre cotisation; le choix de payer celle du conjoint est exclu.
+    Les deux réductions utilisent respectivement 1/12 de la cotisation selon le revenu et
+    les plafonds mensuels du semestre. Aucune couverture ni situation familiale n'est présumée.
+    """
+    if len(exempt_months) == 12:
+        return 0.0
+    x = family_income - drug_insurance_exemption(has_spouse=has_spouse,
+                                                dependent_children=dependent_children, table=table)
     if x <= 0:
         return 0.0
+    status = "couple" if has_spouse else "single"
     width = table["first_bracket_width"]
     if x <= width:
-        premium = x * table["first_rate_single"]
+        premium = x * table[f"first_rate_{status}"]
     else:
-        premium = width * table["first_rate_single"] + (x - width) * table["second_rate_single"]
-    return min(premium, table["rate_cap"], table["annual_maximum"])
+        premium = width * table[f"first_rate_{status}"] + (x - width) * table[f"second_rate_{status}"]
+    premium = min(premium, table["rate_cap"])
+    reduced = premium - premium * len(exempt_months) / 12
+    first = sum(month <= 6 for month in exempt_months)
+    maximum = (table["annual_maximum"] - first * table["monthly_maximum_first_half"]
+               - (len(exempt_months) - first) * table["monthly_maximum_second_half"])
+    return max(0.0, min(reduced, maximum))
 
 
 def career_extension_credit(*, age: int, work_income: float, net_income: float, table: dict) -> float:

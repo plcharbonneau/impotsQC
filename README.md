@@ -4,7 +4,7 @@ Calcul des déclarations de revenus **fédérale (T1)** et **du Québec (TP-1)**
 et de la **pension alimentaire pour enfants** selon le modèle québécois, pour un script ou un agent. On décrit un contribuable fictif et on obtient chaque ligne des
 formulaires et annexes : montant, numéro de ligne officiel, libellé, et la règle appliquée.
 
-> **Statut : 0.5.0 (alpha).** Le calcul exige maintenant une réponse explicite sur le conjoint
+> **Statut : 0.6.0 en préparation (alpha).** Le calcul exige maintenant une réponse explicite sur le conjoint
 > fiscal et les mois exemptés de cotisation RAMQ. L'annexe K utilise le revenu familial, les
 > enfants admissibles et les deux semestres. Les paramètres RAMQ 2026 restent provisoires.
 > Voir les [limites de calcul](PLAN.md#assurance-medicaments-050).
@@ -15,11 +15,23 @@ formulaires et annexes : montant, numéro de ligne officiel, libellé, et la rè
 - Situations : **salarié** (emploi, cotisations RRQ/AE/RQAP, déduction REER, placements) et
   **retraité** (FERR et REER, RRQ, PSV et son remboursement, crédits d'âge, de pension, de
   personne vivant seule, de prolongation de carrière), dividendes et gains en capital.
+- Revenus supplémentaires : rentes de RPA/REER, FERR de survivant, AE régulière/spéciale,
+  RQAP, SRG reçu, aide sociale et indemnités de remplacement. Cotisations RPA et cotisations
+  syndicales/professionnelles : déduction fédérale et crédit québécois distincts.
 - Assurance médicaments : personne avec ou sans conjoint fiscal, revenu net du conjoint,
   enfants admissibles et mois exemptés confirmés. Chaque personne paie sa propre cotisation.
-- Hors portée pour l'instant : travail autonome, crédits et transferts entre conjoints,
-  fractionnement de pension, crédits pour enfants, frais médicaux, dons, crédits remboursables,
-  acomptes provisionnels. Le calcul global d'un couple reste incomplet et porte un avertissement.
+- Couples : `compute_couple` calcule les revenus nets des deux personnes, les réutilise pour
+  la RAMQ et met en commun les droits d'âge/retraite/vivre seul de l'annexe B avant partage.
+  Il applique aussi les montants fédéraux pour conjoint soutenu (annexe 5), les transferts de
+  droits d'âge/pension (annexe 2 du Québec) et les crédits inutilisés québécois (ligne 431).
+- Fractionnement : T1032 et annexe Q pour les rentes RPA/REER et FERR saisis, avec choix
+  distincts, plafonds, prorata fédéral, crédits de pension et transfert obligatoire des retenues.
+- Retenues et acomptes réellement fournis : calcul des soldes/remboursements, distincts de
+  l'impôt annuel. Aucun paiement n'est estimé lorsque les renseignements sont absents.
+- Hors portée pour l'instant : travail autonome, autres crédits/transferts familiaux,
+  pensions particulières (conventions de retraite, vétérans, RPAC et pensions étrangères),
+  crédits pour enfants, frais médicaux, dons et crédits remboursables non encore implémentés.
+  Le calcul global d'un couple reste incomplet et porte un avertissement.
 
 ## Usage
 
@@ -39,15 +51,112 @@ r.to_dict()                    # JSON, pour un agent
 ```
 
 `r.federal` et `r.quebec` restent des alias de `r.forms["T1"]` et `r.forms["TP-1"]`.
+
+Pour coordonner deux contribuables fictifs, sans ressaisir le revenu du conjoint :
+
+```python
+from impotsqc import CoupleOptions, Taxpayer, compute_couple, required_couple_questions
+
+first = Taxpayer(year=2025, age=66, rrif_income=25_000, has_spouse=True,
+                 drug_plan_exempt_months=tuple(range(1, 13)))
+second = Taxpayer(year=2025, age=67, rrif_income=25_000, has_spouse=True,
+                  drug_plan_exempt_months=tuple(range(1, 13)))
+choices = CoupleOptions(spouse_amount_claimant="neither", federal_transfers=True)
+required_couple_questions(first, second, options=choices)  # {} : admissibilité et couverture confirmées
+couple = compute_couple(first, second, schedule_b_first_share=0.75, options=choices)
+couple.first.forms["TP-1.D.B"]["34"].amount    # 9 951,65625 $, avant arrondi d'affichage
+couple.second.forms["TP-1.D.B"]["34"].amount   # 3 317,21875 $
+couple.refs["first/TP-1.D.B:12"]              # ("second/TP-1:275",)
+couple.to_dict()                             # deux déclarations et liens interpersonnels
+```
+
+Le partage par défaut est de 50 % chacun; `schedule_b_first_share` permet de choisir de 0 à 1.
+Ce choix n'est pas une optimisation. Les lignes 23 et 28 de B exposent les droits du conjoint;
+33 indique la part demandée par l'autre personne. Les clés `1.C`, `8.C`, `9.C` désignent la
+colonne « conjoint » de la grille de retraite; `1`, `8`, `9` restent la colonne du déclarant.
+`lives_alone=True` confirme l'admissibilité fiscale annuelle, y compris la situation particulière
+admissible de conjoints séparés involontairement; le statut conjugal reste une réponse distincte.
+
+Les `Line.refs` restent locaux à chaque déclaration. `CoupleReturn.refs` ajoute les liens entre
+personnes au format `first/CODE:ligne` et `second/CODE:ligne`, sans inventer de codes de formulaire.
+Un revenu du conjoint déjà saisi est vérifié au cent, puis remplacé par le montant calculé non
+arrondi. `CoupleOptions` exige de confirmer le demandeur du montant pour conjoint, son
+admissibilité au supplément pour infirmité s'il demande ce montant et l'admissibilité aux
+transferts fédéraux. `None` signifie inconnu : le calcul fournit les questions bloquantes.
+Le statut québécois et le faible revenu ne remplacent pas ces confirmations.
+
+Les parties conjoint de l'annexe 5 alimentent T1:30300 et 30425; l'annexe 2 propre au Québec
+transfère les droits d'âge/pension inutilisés à T1:32600. Les études, le handicap et les autres
+personnes à charge restent à ajouter. Les lignes 413 et 430 du TP-1 conservent les soldes
+négatifs. Le transfert québécois est inscrit à 431, négatif chez le cédant et positif chez le
+bénéficiaire, pour soustraire les crédits reçus à 432. `transfer_unused_quebec=False` permet
+de ne pas le demander. La grille 8 du TP-776.42 recalcule la portion admise à l'IMR.
+Les choix et le partage de B figurent dans `CoupleReturn.to_dict()`.
+Les pensions particulières et les crédits restants sont signalés dans les avertissements du total.
+
+Pour choisir un fractionnement, fournir deux choix indépendants dans `CoupleOptions`.
+Exemple fictif avec FERR ordinaires, sans pension liée à un décès dans l'année :
+
+```python
+from impotsqc import CoupleOptions, PensionSplit, TaxPayments, Taxpayer, compute_couple
+
+first = Taxpayer(year=2025, age=66, rrif_income=60_000, has_spouse=True,
+    drug_plan_exempt_months=tuple(range(1, 13)),
+    payments=TaxPayments(federal_withheld=10_000, quebec_withheld=12_000,
+                         federal_instalments=0, quebec_instalments=0))
+second = Taxpayer(year=2025, age=60, has_spouse=True,
+    drug_plan_exempt_months=tuple(range(1, 13)), payments=TaxPayments(0, 0, 0, 0))
+choices = CoupleOptions(spouse_amount_claimant="neither", federal_transfers=True,
+    federal_pension_split=PensionSplit(donor="first", amount=30_000, eligible=True,
+        tax_withheld=10_000, months_as_spouses=12, tax_year_months=12,
+        same_year_survivor_pension=0),
+    quebec_pension_split=PensionSplit(donor="first", amount=20_000, eligible=True,
+        tax_withheld=12_000))
+couple = compute_couple(first, second, options=choices)
+couple.first.forms["T1032"]["22"].amount       # 30 000 $, reportés à T1:21000 et T1:11600
+couple.first.forms["TP-1.D.Q"]["22"].amount   # 20 000 $, reportés à TP-1:245 et TP-1:123
+couple.second.federal["31400"].amount          # 0 : FERR reçu par un bénéficiaire de moins de 65 ans
+couple.second.quebec["451.3"].amount           # 4 000 $ de retenues québécoises reçues
+couple.first.federal_balance                  # solde signé : négatif = remboursement
+couple.first.quebec_balance
+```
+
+`required_couple_questions` demande les confirmations manquantes. `tax_withheld` est la part
+réellement retenue sur les pensions admissibles; les feuillets mixtes doivent être ventilés.
+Le fédéral demande les mois d'union et ceux de l'année fiscale du cédant. L'exception de la
+note 1 pour un bénéficiaire de moins de 65 ans peut aussi demander la part des FERR/rentes
+provenant d'un décès de conjoint survenu dans l'année (`same_year_survivor_pension`). Une
+origine de survivant sans l'année du décès ne suffit pas à confirmer cette exception.
+
+Le T1032 figure dans les deux déclarations, avec les mêmes montants et des liens adaptés à
+chaque rôle. L'annexe Q figure uniquement chez le cédant. Les revenus nets, remboursements
+AE/PSV, crédits d'âge/pension, B/F/K et l'IMR sont calculés après les transferts de revenus.
+Les limites de 50 % sont vérifiées; aucun montant ni sens optimal n'est choisi automatiquement.
+Un choix nul ne construit pas d'annexe. Le prorata au décès du T1032 est calculé, avec un
+avertissement sur les autres règles des déclarations de décès encore à implémenter.
+
+`TaxPayments` exige les quatre montants, y compris zéro : retenues fédérales et québécoises,
+acomptes fédéraux et québécois. Les propriétés `federal_balance` et `quebec_balance` sont
+`None` si ces données sont absentes; sinon elles sont ajoutées au résumé JSON. Les lignes
+48400/48500 du T1 et 478/479 du TP-1 distinguent remboursement et solde dû, chacun en valeur
+positive. Les soldes sont calculés avant intérêts, pénalités et tolérances de perception.
+`total_payable` reste la charge fiscale annuelle, cotisations sociales comprises : saisir
+les paiements ne modifie pas cette charge.
+
 Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée du moteur :
 
 | Code | Document | Condition de présence |
 | --- | --- | --- |
 | `T1`, `TP-1` | Déclarations principales | Toujours |
+| `5000-D1` | Feuille de travail fédérale | Pension admissible, suppléments fédéraux ou récupération AE/PSV; grilles 23500, 25000 et 31400 |
+| `5000-S5` | Montants pour conjoint et personnes à charge | Avec `compute_couple`, montant positif pour conjoint soutenu ou aidant; sections 30300 et 30425 seulement |
+| `5005-S2` | Montants fédéraux transférés du conjoint, version Québec | Avec `compute_couple`, admissibilité confirmée et droits d'âge/pension inutilisés positifs |
+| `T1032` | Choix conjoint de fractionnement de pension | Choix fédéral positif et admissible, copie dans les deux déclarations |
+| `TP-1.D.Q` | Revenus de retraite transférés au conjoint | Choix québécois positif, cédant de 65 ans ou plus; copie chez le cédant seulement |
 | `5000-S3`, `TP-1.D.G` | Gains en capital | Gain net positif fourni; total et inclusion seulement |
 | `5005-S8` | Cotisations au RRQ | Revenu d'emploi positif, 19 à 72 ans, hypothèse d'année complète |
 | `TP-1.D.U` | Déduction RRQ du salarié | Cotisation bonifiée positive, 19 à 72 ans |
-| `TP-1.D.B` | Allègements fiscaux | Âge admissible, personne vivant seule ou revenu de retraite |
+| `TP-1.D.B` | Allègements fiscaux | Âge admissible, personne vivant seule ou revenu de retraite; droits du conjoint inclus avec `compute_couple` |
 | `TP-1.D.F` | Cotisation au FSS | Revenu assujetti au-dessus du premier seuil |
 | `TP-1.D.K` | Assurance médicaments | Revenu familial au-dessus de l'exemption de base et au moins un mois non exempté |
 | `TP-752.PC` | Prolongation de carrière | 65 ans et plus et revenu de travail positif |
@@ -94,13 +203,51 @@ numéro, son libellé, son montant, sa règle, ses `refs` (`"CODE:ligne"`) et se
 `r.to_dict()` contient `year`, `taxpayer`, `forms`, `summary` et `warnings`. Chaque entrée de
 `forms` contient les métadonnées du document et un dictionnaire `lines`; chaque ligne contient
 `label`, `amount`, `rule`, `refs` et `params`. Les montants sont arrondis au cent dans le JSON
-seulement. Les clés historiques `federal` et `quebec` restent disponibles en 0.5
+seulement. Les clés historiques `federal` et `quebec` restent disponibles en 0.6
 comme dictionnaires de lignes; leur retrait est différé. Les anciennes clés préfixées sont déplacées dans leurs annexes :
 voir la [table de migration](CHANGELOG.md#030--2026-10-04).
 
 La numérotation et les versions des formulaires fiscaux sont celles de 2025. Pour l'année 2026,
 les métadonnées portent le statut `rule_2025`, avec les paramètres fiscaux de 2026; les PDF 2026
 ne sont pas encore utilisés.
+
+### Pensions, prestations et cotisations
+
+Les entrées décrivent la situation fiscale; les numéros de formulaire restent dans les sorties.
+Une rente de RPA est distincte d'un retrait REER ordinaire, lequel va à `TP-1:154` et n'ouvre
+pas le montant pour revenus de retraite. `PensionIncome` couvre les rentes canadiennes et FERR;
+les transferts directs et pensions étrangères ne sont pas inclus dans ce type.
+
+```python
+from impotsqc import Benefits, Deductions, PensionIncome, Taxpayer, compute
+
+r = compute(Taxpayer(
+    year=2025, age=55, has_spouse=False,
+    drug_plan_exempt_months=tuple(range(1, 13)),  # assurance privée confirmée, profil fictif
+    pensions=(PensionIncome(amount=20_000, kind="rpp"),),
+    benefits=Benefits(ei_regular=5_000, ei_repayment_exempt=False),
+    deductions=Deductions(rpp=1_000, union_dues_federal=575, union_dues_quebec=500),
+))
+r.forms["5000-D1"]["31400-8"].amount  # revenu admissible au montant pour pension
+r.forms["T1"]["20700"].amount          # déduction RPA
+r.forms["TP-1"]["397"].amount         # crédit québécois de cotisations syndicales
+```
+
+Pour `kind="rrif"` ou `"rrsp_annuity"` avant 65 ans, confirmer `from_deceased_spouse`.
+Les prestations AE régulières, spéciales autres que parentales, de maternité/parentales et RQAP
+se saisissent respectivement dans `ei_regular`, `ei_special`, `ei_maternity_parental` et `qpip`,
+sans doublon. `ei_repayment_exempt` exige une réponse explicite dès qu'il y a de l'AE régulière.
+Les remboursements de trop-perçus (`ei_repaid`, `qpip_repaid`, `oas_overpayment_recovered`) sont
+les sommes déductibles dans l'année; le moteur calcule séparément la récupération selon le revenu.
+Le choix d'imputer un remboursement à une année antérieure reste à ajouter.
+
+L'aide sociale fédérale (`social_assistance`) et québécoise (`quebec_social_assistance`) peuvent
+être attribuées différemment entre conjoints : le second montant doit être confirmé, même à zéro.
+Pour les indemnités, fournir `quebec_replacement_adjustment` depuis la case M du relevé 5, ou
+un TP-752.0.0.6 déjà rempli, sans déduire ce redressement du seul montant des indemnités.
+Le SRG fourni dans `federal_supplements` est un montant **reçu**, pas une prestation prévisionnelle.
+
+La suite de l'implémentation complète est suivie dans [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ### Questions à poser avant le calcul
 

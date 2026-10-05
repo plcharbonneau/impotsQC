@@ -57,4 +57,28 @@ def required_questions(taxpayer: Taxpayer) -> dict[str, str]:
             f"Combien d'enfants à charge admissibles à l'annexe K aviez-vous en {taxpayer.year} ? "
             "Confirmez 0 s'il n'y en a aucun; utilisez la définition du guide à la ligne 447 "
             "(les critères ne sont pas simplement le nombre d'enfants du ménage). " + _DRUG_SOURCE)
+    for index, pension in enumerate(taxpayer.pensions):
+        if (pension.amount > 0 and pension.kind != "rpp" and taxpayer.age < 65
+                and pension.from_deceased_spouse is None):
+            questions[f"pensions.{index}.from_deceased_spouse"] = (
+                "Ce revenu de FERR ou de rente REER découle-t-il du décès de votre conjoint ? "
+                "Avant 65 ans, cette information détermine son admissibilité au montant pour pension.")
+    benefits = taxpayer.benefits
+    if benefits is not None:
+        if benefits.social_assistance > 0 and benefits.quebec_social_assistance is None:
+            questions["benefits.quebec_social_assistance"] = (
+                "Quel montant d'aide sociale devez-vous déclarer au Québec (relevé 5, cases A et B, "
+                "ligne 147 du TP-1), y compris zéro ? L'attribution entre conjoints au fédéral "
+                "peut être différente; le montant fédéral n'est pas recopié automatiquement.")
+        if benefits.ei_regular > 0 and benefits.ei_repayment_exempt is None:
+            questions["benefits.ei_repayment_exempt"] = (
+                "Êtes-vous exempté du remboursement des prestations régulières d'assurance-emploi "
+                "selon la case 7 du T4E et les règles d'antécédents de prestations ? "
+                "Confirmez True ou False; les prestations spéciales sont traitées séparément.")
+        if ((benefits.workers_compensation > 0 or benefits.quebec_other_replacement > 0)
+                and benefits.quebec_replacement_adjustment is None):
+            questions["benefits.quebec_replacement_adjustment"] = (
+                "Quel redressement pour indemnités figure à la case M du relevé 5 "
+                "(ligne 358 du TP-1) ? Confirmez 0 si aucun redressement n'est applicable. "
+                "Pour un régime public hors Québec, il faut déterminer le montant avec le TP-752.0.0.6.")
     return questions

@@ -11,76 +11,119 @@ Une fonction rend None avant de construire un formulaire qui ne s'applique pas.
 from __future__ import annotations
 
 from . import rules
-from .model import Form, Line, Taxpayer
+from .model import Form, Line, Taxpayer, TaxReturn
 
 
-def schedule_b(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
-    """Annexe B : montants personnels d'âge et de retraite, réduction selon le revenu familial.
+def schedule_b(tp: Taxpayer, params: dict, quebec: Form, *,
+               spouse: TaxReturn | None = None, share: float = 1.0) -> Form | None:
+    """Annexe B : droits individuels ou communs, réduction familiale et répartition.
 
-    Les droits du conjoint et la répartition du montant entre conjoints restent hors portée;
-    un avertissement de `compute` signale cette limite pour les couples."""
+    Le calcul coordonné fournit les revenus déjà établis du conjoint. La réduction s’applique
+    au total des droits, avant le partage. Les clés 1.C, 8.C et 9.C désignent la colonne conjoint
+    de la grille de retraite; les clés historiques 1, 8 et 9 désignent la colonne du déclarant.
+    """
     t = params["quebec"]["schedule_b"]
-    retirement = quebec.amount("122")
-    if not (tp.lives_alone or tp.age >= t["minimum_age"] or retirement > 0):
+    retirement = quebec.amount("122") + quebec.amount("123")
+    partner = spouse.taxpayer if spouse is not None else None
+    partner_retirement = spouse.quebec.amount("122") + spouse.quebec.amount("123") if spouse is not None else 0.0
+    own_right = tp.lives_alone or tp.age >= t["minimum_age"] or retirement > 0
+    partner_right = partner is not None and (
+        partner.lives_alone or partner.age >= t["minimum_age"] or partner_retirement > 0)
+    if not (own_right or partner_right):
         return None
     f = Form.from_parameters("TP-1.D.B", params)
-    net = f.add("10", "Revenu net", quebec.amount("275"),
-                refs=("TP-1:275",))
+    net = f.add("10", "Revenu net", quebec.amount("275"), refs=("TP-1:275",))
     family_income = net
     family_refs = ("TP-1.D.B:10",)
     if tp.has_spouse:
         family_income += f.add("12", "Revenu net du conjoint", tp.spouse_net_income,
-                               "ligne 275 du TP-1 du conjoint, fournie par l'appelant")
+            "ligne 275 du TP-1 du conjoint; lien dans CoupleReturn.refs" if spouse is not None
+            else "ligne 275 du TP-1 du conjoint, fournie par l'appelant")
         family_refs += ("TP-1.D.B:12",)
     f.add("14", "Revenu familial", family_income, refs=family_refs)
-    f.add("15", "Revenu familial", family_income,
-          refs=("TP-1.D.B:14",))
+    f.add("15", "Revenu familial", family_income, refs=("TP-1.D.B:14",))
     threshold = f.add("16", "Seuil de réduction", t["reduction_threshold"],
                       params=("quebec.schedule_b.reduction_threshold",))
     excess = f.add("18", "Revenu familial excédant le seuil", max(0.0, family_income - threshold),
                    refs=("TP-1.D.B:15", "TP-1.D.B:16"))
-    alone = f.add("20", "Montant pour personne vivant seule", t["living_alone"] if tp.lives_alone else 0.0,
+    alone_count = int(tp.lives_alone) + (int(partner.lives_alone) if partner is not None else 0)
+    alone = f.add("20", "Montant pour personne vivant seule", t["living_alone"] * alone_count,
+                  "admissibilité confirmée pour chaque personne; total commun en cas de séparation involontaire",
                   params=("quebec.schedule_b.living_alone",))
     age = f.add("22", "Montant accordé en raison de l'âge", t["age"] if tp.age >= t["minimum_age"] else 0.0,
                 params=("quebec.schedule_b.age", "quebec.schedule_b.minimum_age"))
-    pension = 0.0
-    if retirement > 0:
-        f.add("1", "Revenus de retraite", retirement, "grille de calcul, lignes 122 et 123 dans la portée",
-              refs=("TP-1:122",))
-        f.add("8", "Revenus de retraite admissibles", retirement, "aucun transfert ni déduction visée",
-              refs=("TP-1.D.B:1",))
-        pension = f.add("9", "Montant pour revenus de retraite",
-                        min(t["retirement_income_factor"] * retirement, t["retirement_income_maximum"]),
-                        "grille : ligne 8 × facteur, plafonné",
-                        refs=("TP-1.D.B:8",),
-                        params=(
-                            "quebec.schedule_b.retirement_income_factor",
-                            "quebec.schedule_b.retirement_income_maximum",
-                        ))
+    partner_age = 0.0
+    if partner is not None:
+        partner_age = f.add("23", "Montant accordé en raison de l'âge à votre conjoint",
+                            t["age"] if partner.age >= t["minimum_age"] else 0.0,
+                            params=("quebec.schedule_b.age", "quebec.schedule_b.minimum_age"))
+    pension = _retirement_grid(f, t, quebec)
     f.add("27", "Montant pour revenus de retraite", pension,
           refs=("TP-1.D.B:9",) if retirement > 0 else ())
-    f.add("30", "Total des montants", alone + age + pension,
-          refs=("TP-1.D.B:20", "TP-1.D.B:22", "TP-1.D.B:27"))
-    f.add("31", "Réduction selon le revenu familial", t["reduction_rate"] * excess,
-          refs=("TP-1.D.B:18",),
-          params=("quebec.schedule_b.reduction_rate",))
-    amount = rules.schedule_b_amount(age=tp.age, lives_alone=tp.lives_alone, retirement_income=retirement,
-                                     family_income=family_income, table=t)
-    f.add("32", "Montant auquel vous avez droit", amount, "ligne 30 − ligne 31, minimum zéro",
-          refs=("TP-1.D.B:30", "TP-1.D.B:31"))
+    total = alone + age + pension
+    total_refs = ("TP-1.D.B:20", "TP-1.D.B:22", "TP-1.D.B:27")
+    if partner is not None:
+        partner_pension = _retirement_grid(f, t, spouse.quebec, spouse=True)
+        f.add("28", "Montant pour revenus de retraite de votre conjoint", partner_pension,
+              refs=("TP-1.D.B:9.C",) if partner_retirement > 0 else ())
+        total = alone + (age + partner_age) + (pension + partner_pension)
+        total_refs += ("TP-1.D.B:23", "TP-1.D.B:28")
+    f.add("30", "Total des montants", total, refs=total_refs)
+    reduction = f.add("31", "Réduction selon le revenu familial", t["reduction_rate"] * excess,
+                      refs=("TP-1.D.B:18",), params=("quebec.schedule_b.reduction_rate",))
+    amount = f.add("32", "Montant auquel vous avez droit", max(0.0, total - reduction),
+                   "ligne 30 − ligne 31, minimum zéro", refs=("TP-1.D.B:30", "TP-1.D.B:31"))
+    final_refs = ("TP-1.D.B:32",)
+    if spouse is not None:
+        other = f.add("33", "Montant demandé par votre conjoint à la ligne 361 de sa déclaration",
+                      amount * (1 - share), "partage choisi du montant commun; aucun second abattement familial",
+                      refs=("TP-1.D.B:32",))
+        amount -= other
+        final_refs += ("TP-1.D.B:33",)
     f.add("34", "Montant accordé en raison de l'âge ou pour personne vivant seule ou pour revenus de retraite",
-          amount, "sans montant demandé par un conjoint",
-          refs=("TP-1.D.B:32",))
+          amount, "ligne 32 moins ligne 33" if spouse is not None else "sans montant demandé par un conjoint",
+          refs=final_refs)
     return f
 
 
-def schedule_f(params: dict, quebec: Form) -> Form | None:
+def _retirement_grid(form: Form, table: dict, quebec: Form, *, spouse: bool = False) -> float:
+    """Remplit une colonne de la grille, après le transfert de pension des lignes 123/245."""
+    income = quebec.amount("122") + quebec.amount("123")
+    if income <= 0:
+        return 0.0
+    suffix = ".C" if spouse else ""
+    refs = ("TP-1:122",) + (("TP-1:123",) if "123" in quebec.lines else ())
+    form.add("1" + suffix, "Revenus de retraite", income,
+             "lignes 122 et 123 du conjoint; lien dans CoupleReturn.refs" if spouse else "total des lignes 122 et 123",
+             refs=() if spouse else refs)
+    transferred = quebec.amount("245")
+    refs = ("TP-1.D.B:1" + suffix,)
+    if transferred:
+        form.add("6" + suffix, "Revenus de retraite transférés au conjoint", transferred,
+                 "ligne 245 du conjoint; lien dans CoupleReturn.refs" if spouse else "ligne 245 du déclarant",
+                 refs=() if spouse else ("TP-1:245",))
+        form.add("7" + suffix, "Total des déductions", transferred, "aucune autre déduction relative à la pension saisie",
+                 refs=("TP-1.D.B:6" + suffix,))
+        refs += ("TP-1.D.B:7" + suffix,)
+    eligible = income - transferred
+    form.add("8" + suffix, "Revenus de retraite admissibles", eligible, "ligne 1 moins ligne 7", refs=refs)
+    return form.add("9" + suffix, "Montant pour revenus de retraite",
+                    min(table["retirement_income_factor"] * eligible, table["retirement_income_maximum"]),
+                    "grille : ligne 8 × facteur, plafonné", refs=("TP-1.D.B:8" + suffix,),
+                    params=("quebec.schedule_b.retirement_income_factor", "quebec.schedule_b.retirement_income_maximum"))
+
+
+def schedule_f(params: dict, quebec: Form, *, ei_repayment: float = 0.0,
+               benefit_repayments: float = 0.0) -> Form | None:
     """Annexe F, revenu assujetti et colonne du barème applicable au contribuable."""
     t = params["quebec"]["health_services_fund"]
     total, employment, oas = quebec.amount("199"), quebec.amount("101"), quebec.amount("114")
     dividends = quebec.amount("128")
     gross_up = dividends - quebec.amount("166") - quebec.amount("167")
-    base = total - employment - oas - gross_up
+    excluded_benefits = quebec.amount("147") + quebec.amount("148")
+    income = total - employment - oas - gross_up - excluded_benefits
+    pension_transferred = quebec.amount("245")
+    base = max(0.0, income - ei_repayment - benefit_repayments - pension_transferred)
     if base <= t["first_threshold"]:
         return None
     f = Form.from_parameters("TP-1.D.F", params)
@@ -100,12 +143,34 @@ def schedule_f(params: dict, quebec: Form) -> Form | None:
           refs=("TP-1:166", "TP-1:167"))
     f.add("25", "Majoration des dividendes", gross_up,
           refs=("TP-1.D.F:23", "TP-1.D.F:24"))
-    f.add("34", "Total des revenus exclus", oas + gross_up,
-          refs=("TP-1.D.F:22", "TP-1.D.F:25"))
-    f.add("36", "Revenu", base,
+    excluded_refs = ("TP-1.D.F:22", "TP-1.D.F:25")
+    for number, target in (("28", "147"), ("29", "148")):
+        if target in quebec.lines:
+            f.add(number, quebec[target].label, quebec.amount(target), refs=(f"TP-1:{target}",))
+            excluded_refs += (f"TP-1.D.F:{number}",)
+    f.add("34", "Total des revenus exclus", oas + gross_up + excluded_benefits, refs=excluded_refs)
+    f.add("36", "Revenu", income,
           refs=("TP-1.D.F:18", "TP-1.D.F:34"))
-    f.add("70", "Revenu assujetti à la cotisation", base, "aucune déduction visée dans la portée",
-          refs=("TP-1.D.F:36",))
+    deduction_refs = ()
+    if benefit_repayments:
+        f.add("41", "Remboursement de sommes reçues en trop", benefit_repayments,
+              "partie AE et RQAP de la ligne 246; PSV exclue", refs=("TP-1:246",))
+        deduction_refs += ("TP-1.D.F:41",)
+    if ei_repayment:
+        f.add("44", "Remboursement de prestations d'assurance emploi", ei_repayment,
+              "partie AE de la ligne 250; récupération PSV et suppléments exclue",
+              refs=("5000-D1:23500-7",))
+        deduction_refs += ("TP-1.D.F:44",)
+    if pension_transferred:
+        f.add("46", "Déduction pour revenus de retraite transférés au conjoint", pension_transferred,
+              refs=("TP-1:245",))
+        deduction_refs += ("TP-1.D.F:46",)
+    base_refs = ("TP-1.D.F:36",)
+    if deduction_refs:
+        f.add("68", "Total des déductions", ei_repayment + benefit_repayments + pension_transferred, refs=deduction_refs)
+        base_refs += ("TP-1.D.F:68",)
+    f.add("70", "Revenu assujetti à la cotisation", base, "ligne 36 moins ligne 68, minimum zéro",
+          refs=base_refs)
     f.add("76", "Revenu assujetti à la cotisation", base,
           refs=("TP-1.D.F:70",))
     upper = base > t["second_threshold"]
@@ -265,35 +330,39 @@ def career_extension(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
     return f
 
 
-def minimum_tax(tp: Taxpayer, params: dict, quebec: Form, dividend_gross_up: float) -> Form | None:
-    """TP-776.42 : revenu modifié, exemption et déduction de base, selon la portée du moteur 0.2."""
+def minimum_tax(tp: Taxpayer, params: dict, quebec: Form, dividend_gross_up: float, *,
+                spouse: TaxReturn | None = None) -> Form | None:
+    """TP-776.42 : base signée, rajouts des déductions visées et crédits admissibles à l’IMR."""
     t = params["quebec"]["minimum_tax"]
     inclusion = params["federal"]["capital_gains"]["inclusion_rate"]
-    taxable, enhanced = quebec.amount("299"), quebec.amount("248")
+    taxable = quebec.amount("256") - quebec.amount("295")
+    enhanced, worker = quebec.amount("248"), quebec.amount("201")
     amt = rules.minimum_tax(taxable_income=taxable, capital_gains=tp.capital_gains, capital_gains_inclusion=inclusion,
-                            addback_deductions=enhanced, dividend_gross_up=dividend_gross_up,
+                            addback_deductions=enhanced + worker, dividend_gross_up=dividend_gross_up,
                             credits=quebec.amount("399"), table=t)
     if amt.net_adjusted_taxable_income <= 0:
         return None
     f = Form.from_parameters("TP-776.42", params)
-    f.add("1", "Revenu imposable", taxable, "base du moteur 0.2, après plancher à zéro",
-          refs=("TP-1:299",))
+    f.add("1", "Revenu imposable", taxable, "recalcul sans plancher à zéro aux lignes 275 et 299",
+          refs=("TP-1:256",) + (("TP-1:295",) if "295" in quebec.lines else ()))
     gains = f.add("10", "Ajout pour les gains en capital", tp.capital_gains * (t["capital_gains_inclusion"] - inclusion),
                   "gain réalisé × différence des taux d'inclusion",
                   refs=("TP-1:139",),
                   params=("quebec.minimum_tax.capital_gains_inclusion", "federal.capital_gains.inclusion_rate"))
-    added = t["deduction_addback_rate"] * enhanced
-    if enhanced > 0:
+    added = t["deduction_addback_rate"] * (enhanced + worker)
+    if enhanced or worker:
         f.add("157.5", "Déduction pour cotisation au RRQ, au RPC ou au RQAP", enhanced,
               refs=("TP-1:248",))
-        f.add("158", "Déductions rajoutées", added,
-              "portée héritée : cotisations bonifiées seulement; déduction pour travailleur non rajoutée",
-              refs=("TP-776.42:157.5",),
+        f.add("157.9", "Déduction pour travailleur", worker, refs=("TP-1:201",))
+        f.add("157.11", "Total des déductions visées", enhanced + worker,
+              refs=("TP-776.42:157.5", "TP-776.42:157.9"))
+        f.add("157.12", "Taux applicable", t["deduction_addback_rate"], "taux exprimé comme fraction",
               params=("quebec.minimum_tax.deduction_addback_rate",))
-        f.add("160", "Autres ajouts au revenu imposable", added,
-              refs=("TP-776.42:158",))
+        f.add("158", "Montant de la ligne 157.11 multiplié par 50 %", added,
+              refs=("TP-776.42:157.11", "TP-776.42:157.12"))
+        f.add("160", "Autres ajouts au revenu imposable", added, refs=("TP-776.42:158",))
     f.add("17", "Autres ajouts au revenu imposable", added,
-          refs=("TP-776.42:160",) if enhanced > 0 else ("TP-1:248",),
+          refs=("TP-776.42:160",) if enhanced or worker else ("TP-1:248", "TP-1:201"),
           params=("quebec.minimum_tax.deduction_addback_rate",))
     f.add("18", "Revenu imposable après ajouts", taxable + gains + added,
           refs=("TP-776.42:1", "TP-776.42:10", "TP-776.42:17"))
@@ -320,17 +389,70 @@ def minimum_tax(tp: Taxpayer, params: dict, quebec: Form, dividend_gross_up: flo
     deduction = f.add("254", "Crédits admis aux fins de l'IMR", credits * t["credit_fraction"], "aucun don dans la portée",
                       refs=("TP-776.42:250",),
                       params=("quebec.minimum_tax.credit_fraction",))
-    f.add("258", "Déduction d'impôt minimum de base", deduction, "aucun crédit transféré",
-          refs=("TP-776.42:254",))
+    deduction_refs = ("TP-776.42:254",)
+    if spouse is not None and quebec.amount("431") > 0:
+        transferred = _spouse_minimum_credit(f, params, spouse)
+        deduction += f.add("257.1", "Crédits d'impôt transférés par votre conjoint", transferred,
+                           refs=("TP-776.42:318",) if "318" in f.lines else ("TP-776.42:292",))
+        deduction_refs += ("TP-776.42:257.1",)
+    f.add("258", "Déduction d'impôt minimum de base", deduction, refs=deduction_refs)
     f.add("27", "Déduction d'impôt minimum de base", deduction,
           refs=("TP-776.42:258",))
-    f.add("30", "Impôt minimum après déduction", amt.minimum_amount, "ligne 26 − ligne 27, minimum zéro",
+    minimum_amount = max(0.0, amt.net_adjusted_taxable_income * t["rate"] - deduction)
+    f.add("30", "Impôt minimum après déduction", minimum_amount, "ligne 26 − ligne 27, minimum zéro",
           refs=("TP-776.42:26", "TP-776.42:27"))
-    f.add("32", "Impôt minimum applicable", amt.minimum_amount, "100 % au Québec",
+    f.add("32", "Impôt minimum applicable", minimum_amount, "100 % au Québec",
           refs=("TP-776.42:30",))
-    f.add("34", "Impôt minimum de remplacement", amt.minimum_amount, "aucun crédit pour impôt étranger",
+    f.add("34", "Impôt minimum de remplacement", minimum_amount, "aucun crédit pour impôt étranger",
           refs=("TP-776.42:32",))
     return f
+
+
+def _spouse_minimum_credit(form: Form, params: dict, spouse: TaxReturn) -> float:
+    """Grille 8 du TP-776.42, crédits courants sans dons ni montants d’études dans les entrées.
+
+    Le crédit transféré admis à l’IMR est recalculé depuis les droits du conjoint; il ne suffit
+    pas de prendre la moitié de TP-1:431, notamment en présence de dividendes. Les modules
+    d’études et de dons compléteront les premières attributions B.1/B.2.
+    """
+    q = spouse.quebec
+    credits = form.add("270", "Crédits d'impôt non remboursables du conjoint", q.amount("399"),
+                       "ligne 399 du conjoint; lien dans CoupleReturn.refs")
+    career = form.add("271", "Crédit pour prolongation de carrière du conjoint", q.amount("391"),
+                      "ligne 391 du conjoint; lien dans CoupleReturn.refs")
+    form.add("275", "Total des crédits exclus", career, "aucun crédit habitation, culturel ou nouveau diplômé saisi",
+             refs=("TP-776.42:271",))
+    adjusted = form.add("276", "Crédits après exclusions", credits - career,
+                        refs=("TP-776.42:270", "TP-776.42:275"))
+    tax = form.add("277", "Impôt sur le revenu imposable du conjoint", q.amount("401"),
+                   "ligne 401 du conjoint; lien dans CoupleReturn.refs")
+    form.add("279", "Impôt après redressement", tax, "aucun paiement unique de 1971 ni impôt sur revenu fractionné saisi",
+             refs=("TP-776.42:277",))
+    form.add("280", "Crédit pour prolongation de carrière du conjoint", career, refs=("TP-776.42:271",))
+    other = form.add("287", "Montant de la ligne 425 de la déclaration du conjoint", q.amount("425"),
+                     "lien dans CoupleReturn.refs")
+    form.add("288", "Total des crédits à appliquer avant les crédits transférables", career + other,
+             "aucun report IMR ni crédit étranger ou fiduciaire dans la portée actuelle",
+             refs=("TP-776.42:280", "TP-776.42:287"))
+    used = form.add("289", "Impôt après crédits prioritaires", max(0.0, tax - career - other),
+                    refs=("TP-776.42:279", "TP-776.42:288"))
+    form.add("290", "Montant de la ligne 276", adjusted, refs=("TP-776.42:276",))
+    form.add("291", "Montant de la ligne 289", used, refs=("TP-776.42:289",))
+    unused = form.add("292", "Montant rajusté des crédits transférés par votre conjoint", max(0.0, adjusted - used),
+                      refs=("TP-776.42:290", "TP-776.42:291"))
+    if unused == 0:
+        return 0.0
+    form.add("310", "Montant restant après les première et deuxième attributions", unused,
+             "aucun intérêt étudiant, frais de scolarité ou don saisi", refs=("TP-776.42:292",))
+    form.add("312", "Montant de la troisième attribution", unused, refs=("TP-776.42:310",))
+    rate = form.add("313", "Taux applicable", params["quebec"]["minimum_tax"]["credit_fraction"],
+                    "taux exprimé comme fraction", params=("quebec.minimum_tax.credit_fraction",))
+    amount = form.add("314", "Troisième attribution multipliée par le taux applicable", unused * rate,
+                      refs=("TP-776.42:312", "TP-776.42:313"))
+    form.add("317", "Montant de la ligne 314", amount, refs=("TP-776.42:314",))
+    form.add("318", "Crédits d'impôt transférés par votre conjoint", amount,
+             "première et deuxième attributions nulles dans la portée actuelle", refs=("TP-776.42:317",))
+    return amount
 
 
 def schedule_e(params: dict, quebec: Form, minimum: Form) -> Form:
@@ -338,8 +460,13 @@ def schedule_e(params: dict, quebec: Form, minimum: Form) -> Form:
     f = Form.from_parameters("TP-1.D.E", params)
     ordinary = f.add("10", "Montant de la ligne 430 de votre déclaration", quebec.amount("430"),
                      refs=("TP-1:430",))
-    f.add("12", "Impôt après crédits transférés", max(0.0, ordinary), "sans conjoint",
-          refs=("TP-1.D.E:10",))
+    refs = ("TP-1.D.E:10",)
+    if "431" in quebec.lines:
+        ordinary -= f.add("11", "Crédits transférés d'un conjoint à l'autre", quebec.amount("431"),
+                          refs=("TP-1:431",))
+        refs += ("TP-1.D.E:11",)
+    f.add("12", "Impôt après crédits transférés", max(0.0, ordinary), "ligne 10 moins ligne 11, minimum zéro",
+          refs=refs)
     f.add("14", "Impôt après report de l'IMR", max(0.0, ordinary), "report non modélisé",
           refs=("TP-1.D.E:12",))
     amt = f.add("15", "Impôt minimum de remplacement", minimum.amount("34"),

@@ -4,9 +4,11 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field
 from math import isfinite
 from typing import NamedTuple
+
+from .inputs import Benefits, CoupleOptions, Deductions, PensionIncome, TaxPayments, validate_amounts
 
 
 @dataclass(frozen=True)
@@ -15,7 +17,7 @@ class Taxpayer:
 
     Montants annuels en dollars de l'année `year`. `age` est l'âge au 31 décembre.
     - `rrif_income` : retraits d'un FERR ou d'un FRV (ligne 11500 à 65 ans et plus, 13000 avant);
-    - `rrsp_income` : retraits d'un REER (ligne 12900; TP-1 ligne 122);
+    - `rrsp_income` : retraits ordinaires d’un REER non échu (ligne 12900; TP-1 ligne 154);
     - `eligible_dividends`, `other_dividends` : montants RÉELS, avant majoration;
     - `capital_gains` : gain en capital net réalisé, avant inclusion.
     - `has_spouse` : conjoint fiscal au 31 décembre selon Revenu Québec, distinct de `lives_alone`;
@@ -24,9 +26,12 @@ class Taxpayer:
       base ou autre exemption confirmée; `()` signifie aucune exemption, `None` signifie inconnu;
     - `drug_plan_dependent_children` : enfants à charge admissibles à l'annexe K, zéro à confirmer.
 
+    `lives_alone` confirme l’admissibilité annuelle au montant pour personne vivant seule,
+    et non simplement l’absence d’un conjoint dans l’habitation au 31 décembre.
     Les questions manquantes sont exposées par `required_questions`; `compute` les exige avant
-    de produire un total. Chaque conjoint paie sa propre cotisation RAMQ. Les crédits et transferts
-    entre conjoints restent hors portée et sont signalés dans les avertissements.
+    de produire un total. `compute_couple` coordonne les revenus et le partage de l’annexe B;
+    les autres crédits/transferts entre conjoints restent signalés hors portée. Chaque conjoint
+    paie sa propre cotisation RAMQ.
     """
 
     year: int
@@ -41,6 +46,10 @@ class Taxpayer:
     other_dividends: float = 0.0
     capital_gains: float = 0.0
     rrsp_deduction: float = 0.0
+    pensions: tuple[PensionIncome, ...] = ()
+    benefits: Benefits | None = None
+    deductions: Deductions | None = None
+    payments: TaxPayments | None = None
     lives_alone: bool = False
     has_spouse: bool | None = None
     spouse_net_income: float | None = None
@@ -51,10 +60,17 @@ class Taxpayer:
         """Valide les montants, l’âge adulte et les réponses explicites sur le ménage et les mois."""
         if not 18 <= self.age <= 120:
             raise ValueError(f"âge hors de [18, 120] : {self.age}")
-        for f in fields(self):
-            value = getattr(self, f.name)
-            if f.type == "float" and value < 0:
-                raise ValueError(f"{f.name} ne peut pas être négatif : {value}")
+        validate_amounts(self)
+        if self.payments is not None and not isinstance(self.payments, TaxPayments):
+            raise ValueError("payments doit être un objet TaxPayments")
+        if self.benefits is not None and not isinstance(self.benefits, Benefits):
+            raise ValueError("benefits doit être un objet Benefits")
+        if self.deductions is not None and not isinstance(self.deductions, Deductions):
+            raise ValueError("deductions doit être un objet Deductions")
+        if not isinstance(self.pensions, (tuple, list)) or any(
+                not isinstance(pension, PensionIncome) for pension in self.pensions):
+            raise ValueError("pensions doit contenir des objets PensionIncome")
+        object.__setattr__(self, "pensions", tuple(self.pensions))
         if self.has_spouse is not None and type(self.has_spouse) is not bool:
             raise ValueError("has_spouse doit être True, False ou None (inconnu)")
         if self.spouse_net_income is not None:
@@ -173,9 +189,24 @@ class TaxReturn:
         """Impôts fédéral et du Québec, cotisations sociales comprises."""
         return self.federal_payable + self.quebec_payable + self.payroll_contributions
 
+    @property
+    def federal_balance(self) -> float | None:
+        """Solde fédéral signé après retenues et acomptes; négatif pour un remboursement, None si inconnu."""
+        return self.federal.amount("172") if "172" in self.federal.lines else None
+
+    @property
+    def quebec_balance(self) -> float | None:
+        """Solde québécois signé après retenues et acomptes; négatif pour un remboursement, None si inconnu."""
+        return self.quebec.amount("470") if "470" in self.quebec.lines else None
+
     def to_dict(self) -> dict:
         """Déclaration complète en JSON simple, pour un script ou un agent."""
         forms = {code: form.to_dict() for code, form in self.forms.items()}
+        summary = {k: round(getattr(self, k), 2) for k in
+                   ("federal_payable", "quebec_payable", "payroll_contributions", "total_payable")}
+        if self.federal_balance is not None:
+            summary["federal_balance"] = round(self.federal_balance, 2)
+            summary["quebec_balance"] = round(self.quebec_balance, 2)
         return {
             "year": self.taxpayer.year,
             "taxpayer": asdict(self.taxpayer),
@@ -183,7 +214,36 @@ class TaxReturn:
             # Compatibilité 0.3 : les deux dictionnaires de lignes historiques restent disponibles.
             "federal": forms["T1"]["lines"],
             "quebec": forms["TP-1"]["lines"],
-            "summary": {k: round(getattr(self, k), 2) for k in
-                        ("federal_payable", "quebec_payable", "payroll_contributions", "total_payable")},
+            "summary": summary,
             "warnings": list(self.warnings),
         }
+
+
+@dataclass(frozen=True)
+class CoupleReturn:
+    """Deux déclarations coordonnées, avec les liens entre personnes séparés des liens locaux.
+
+    Les clés de `refs` sont de la forme `first/TP-1.D.B:12`; elles désignent les lignes qui
+    consultent la déclaration `first` ou `second`. Chaque `TaxReturn` conserve ses codes
+    officiels et ses références locales `CODE:ligne`.
+    """
+
+    first: TaxReturn
+    second: TaxReturn
+    refs: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    options: CoupleOptions | None = None
+    schedule_b_first_share: float = 0.5
+
+    @property
+    def total_payable(self) -> float:
+        """Somme des impôts et cotisations des deux déclarations, dans la portée calculée."""
+        return self.first.total_payable + self.second.total_payable
+
+    def to_dict(self) -> dict:
+        """Sérialise les deux déclarations et les dépendances entre conjoints en JSON simple."""
+        return {"year": self.first.taxpayer.year,
+                "first": self.first.to_dict(), "second": self.second.to_dict(),
+                "refs": {key: list(values) for key, values in self.refs.items()},
+                "options": asdict(self.options) if self.options is not None else None,
+                "schedule_b_first_share": self.schedule_b_first_share,
+                "summary": {"total_payable": round(self.total_payable, 2)}}

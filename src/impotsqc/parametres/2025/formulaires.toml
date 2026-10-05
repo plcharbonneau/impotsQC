@@ -97,3 +97,10 @@ version = "2025-12"
 source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.U%282025-12%29.pdf"
 ref = "Annexe U, partie B : lignes 10 à 23; salarié québécois assujetti toute l’année, sans trop-perçu"
 status = "published"
+
+["5000-D1"]
+title = "Feuille de travail fédérale"
+version = "2025"
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25f.pdf"
+ref = "Grilles 23500, 25000 et 31400; clés préfixées par le numéro de la grille"
+status = "published"

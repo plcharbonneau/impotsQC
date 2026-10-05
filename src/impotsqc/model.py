@@ -4,9 +4,11 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field
 from math import isfinite
 from typing import NamedTuple
+
+from .inputs import Benefits, Deductions, PensionIncome, validate_amounts
 
 
 @dataclass(frozen=True)
@@ -15,7 +17,7 @@ class Taxpayer:
 
     Montants annuels en dollars de l'année `year`. `age` est l'âge au 31 décembre.
     - `rrif_income` : retraits d'un FERR ou d'un FRV (ligne 11500 à 65 ans et plus, 13000 avant);
-    - `rrsp_income` : retraits d'un REER (ligne 12900; TP-1 ligne 122);
+    - `rrsp_income` : retraits ordinaires d’un REER non échu (ligne 12900; TP-1 ligne 154);
     - `eligible_dividends`, `other_dividends` : montants RÉELS, avant majoration;
     - `capital_gains` : gain en capital net réalisé, avant inclusion.
     - `has_spouse` : conjoint fiscal au 31 décembre selon Revenu Québec, distinct de `lives_alone`;
@@ -41,6 +43,9 @@ class Taxpayer:
     other_dividends: float = 0.0
     capital_gains: float = 0.0
     rrsp_deduction: float = 0.0
+    pensions: tuple[PensionIncome, ...] = ()
+    benefits: Benefits | None = None
+    deductions: Deductions | None = None
     lives_alone: bool = False
     has_spouse: bool | None = None
     spouse_net_income: float | None = None
@@ -51,10 +56,15 @@ class Taxpayer:
         """Valide les montants, l’âge adulte et les réponses explicites sur le ménage et les mois."""
         if not 18 <= self.age <= 120:
             raise ValueError(f"âge hors de [18, 120] : {self.age}")
-        for f in fields(self):
-            value = getattr(self, f.name)
-            if f.type == "float" and value < 0:
-                raise ValueError(f"{f.name} ne peut pas être négatif : {value}")
+        validate_amounts(self)
+        if self.benefits is not None and not isinstance(self.benefits, Benefits):
+            raise ValueError("benefits doit être un objet Benefits")
+        if self.deductions is not None and not isinstance(self.deductions, Deductions):
+            raise ValueError("deductions doit être un objet Deductions")
+        if not isinstance(self.pensions, (tuple, list)) or any(
+                not isinstance(pension, PensionIncome) for pension in self.pensions):
+            raise ValueError("pensions doit contenir des objets PensionIncome")
+        object.__setattr__(self, "pensions", tuple(self.pensions))
         if self.has_spouse is not None and type(self.has_spouse) is not bool:
             raise ValueError("has_spouse doit être True, False ou None (inconnu)")
         if self.spouse_net_income is not None:

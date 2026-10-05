@@ -74,13 +74,16 @@ def schedule_b(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
     return f
 
 
-def schedule_f(params: dict, quebec: Form) -> Form | None:
+def schedule_f(params: dict, quebec: Form, *, ei_repayment: float = 0.0,
+               benefit_repayments: float = 0.0) -> Form | None:
     """Annexe F, revenu assujetti et colonne du barème applicable au contribuable."""
     t = params["quebec"]["health_services_fund"]
     total, employment, oas = quebec.amount("199"), quebec.amount("101"), quebec.amount("114")
     dividends = quebec.amount("128")
     gross_up = dividends - quebec.amount("166") - quebec.amount("167")
-    base = total - employment - oas - gross_up
+    excluded_benefits = quebec.amount("147") + quebec.amount("148")
+    income = total - employment - oas - gross_up - excluded_benefits
+    base = max(0.0, income - ei_repayment - benefit_repayments)
     if base <= t["first_threshold"]:
         return None
     f = Form.from_parameters("TP-1.D.F", params)
@@ -100,12 +103,30 @@ def schedule_f(params: dict, quebec: Form) -> Form | None:
           refs=("TP-1:166", "TP-1:167"))
     f.add("25", "Majoration des dividendes", gross_up,
           refs=("TP-1.D.F:23", "TP-1.D.F:24"))
-    f.add("34", "Total des revenus exclus", oas + gross_up,
-          refs=("TP-1.D.F:22", "TP-1.D.F:25"))
-    f.add("36", "Revenu", base,
+    excluded_refs = ("TP-1.D.F:22", "TP-1.D.F:25")
+    for number, target in (("28", "147"), ("29", "148")):
+        if target in quebec.lines:
+            f.add(number, quebec[target].label, quebec.amount(target), refs=(f"TP-1:{target}",))
+            excluded_refs += (f"TP-1.D.F:{number}",)
+    f.add("34", "Total des revenus exclus", oas + gross_up + excluded_benefits, refs=excluded_refs)
+    f.add("36", "Revenu", income,
           refs=("TP-1.D.F:18", "TP-1.D.F:34"))
-    f.add("70", "Revenu assujetti à la cotisation", base, "aucune déduction visée dans la portée",
-          refs=("TP-1.D.F:36",))
+    deduction_refs = ()
+    if benefit_repayments:
+        f.add("41", "Remboursement de sommes reçues en trop", benefit_repayments,
+              "partie AE et RQAP de la ligne 246; PSV exclue", refs=("TP-1:246",))
+        deduction_refs += ("TP-1.D.F:41",)
+    if ei_repayment:
+        f.add("44", "Remboursement de prestations d'assurance emploi", ei_repayment,
+              "partie AE de la ligne 250; récupération PSV et suppléments exclue",
+              refs=("5000-D1:23500-7",))
+        deduction_refs += ("TP-1.D.F:44",)
+    base_refs = ("TP-1.D.F:36",)
+    if deduction_refs:
+        f.add("68", "Total des déductions", ei_repayment + benefit_repayments, refs=deduction_refs)
+        base_refs += ("TP-1.D.F:68",)
+    f.add("70", "Revenu assujetti à la cotisation", base, "ligne 36 moins ligne 68, minimum zéro",
+          refs=base_refs)
     f.add("76", "Revenu assujetti à la cotisation", base,
           refs=("TP-1.D.F:70",))
     upper = base > t["second_threshold"]
@@ -266,34 +287,37 @@ def career_extension(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
 
 
 def minimum_tax(tp: Taxpayer, params: dict, quebec: Form, dividend_gross_up: float) -> Form | None:
-    """TP-776.42 : revenu modifié, exemption et déduction de base, selon la portée du moteur 0.2."""
+    """TP-776.42 : base signée, rajouts des déductions visées et crédits admissibles à l’IMR."""
     t = params["quebec"]["minimum_tax"]
     inclusion = params["federal"]["capital_gains"]["inclusion_rate"]
-    taxable, enhanced = quebec.amount("299"), quebec.amount("248")
+    taxable = quebec.amount("256") - quebec.amount("295")
+    enhanced, worker = quebec.amount("248"), quebec.amount("201")
     amt = rules.minimum_tax(taxable_income=taxable, capital_gains=tp.capital_gains, capital_gains_inclusion=inclusion,
-                            addback_deductions=enhanced, dividend_gross_up=dividend_gross_up,
+                            addback_deductions=enhanced + worker, dividend_gross_up=dividend_gross_up,
                             credits=quebec.amount("399"), table=t)
     if amt.net_adjusted_taxable_income <= 0:
         return None
     f = Form.from_parameters("TP-776.42", params)
-    f.add("1", "Revenu imposable", taxable, "base du moteur 0.2, après plancher à zéro",
-          refs=("TP-1:299",))
+    f.add("1", "Revenu imposable", taxable, "recalcul sans plancher à zéro aux lignes 275 et 299",
+          refs=("TP-1:256",) + (("TP-1:295",) if "295" in quebec.lines else ()))
     gains = f.add("10", "Ajout pour les gains en capital", tp.capital_gains * (t["capital_gains_inclusion"] - inclusion),
                   "gain réalisé × différence des taux d'inclusion",
                   refs=("TP-1:139",),
                   params=("quebec.minimum_tax.capital_gains_inclusion", "federal.capital_gains.inclusion_rate"))
-    added = t["deduction_addback_rate"] * enhanced
-    if enhanced > 0:
+    added = t["deduction_addback_rate"] * (enhanced + worker)
+    if enhanced or worker:
         f.add("157.5", "Déduction pour cotisation au RRQ, au RPC ou au RQAP", enhanced,
               refs=("TP-1:248",))
-        f.add("158", "Déductions rajoutées", added,
-              "portée héritée : cotisations bonifiées seulement; déduction pour travailleur non rajoutée",
-              refs=("TP-776.42:157.5",),
+        f.add("157.9", "Déduction pour travailleur", worker, refs=("TP-1:201",))
+        f.add("157.11", "Total des déductions visées", enhanced + worker,
+              refs=("TP-776.42:157.5", "TP-776.42:157.9"))
+        f.add("157.12", "Taux applicable", t["deduction_addback_rate"], "taux exprimé comme fraction",
               params=("quebec.minimum_tax.deduction_addback_rate",))
-        f.add("160", "Autres ajouts au revenu imposable", added,
-              refs=("TP-776.42:158",))
+        f.add("158", "Montant de la ligne 157.11 multiplié par 50 %", added,
+              refs=("TP-776.42:157.11", "TP-776.42:157.12"))
+        f.add("160", "Autres ajouts au revenu imposable", added, refs=("TP-776.42:158",))
     f.add("17", "Autres ajouts au revenu imposable", added,
-          refs=("TP-776.42:160",) if enhanced > 0 else ("TP-1:248",),
+          refs=("TP-776.42:160",) if enhanced or worker else ("TP-1:248", "TP-1:201"),
           params=("quebec.minimum_tax.deduction_addback_rate",))
     f.add("18", "Revenu imposable après ajouts", taxable + gains + added,
           refs=("TP-776.42:1", "TP-776.42:10", "TP-776.42:17"))

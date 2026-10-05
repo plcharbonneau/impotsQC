@@ -74,8 +74,8 @@ exemption = 183_680
 capital_gains_inclusion = 1.0
 deduction_addback_rate = 0.5
 credit_fraction = 0.5
-source = "https://cffp.recherche.usherbrooke.ca/outils-ressources/guide-mesures-fiscales/impot-minimum-remplacement/"
-ref = "Taux de 19 % et exemption : bulletin d'information 2023-4 et Tableau 3 de Finances Québec (2026). Calcul [19 % × (revenu imposable rajusté − exemption)] − 50 % des crédits non remboursables : Chaire en fiscalité et en finances publiques (Université de Sherbrooke). Le formulaire TP-776.42 n'a pas pu être lu (accès refusé)"
+source = "https://cdn-contenu.quebec.ca/cdn-contenu/adm/min/finances/publications-adm/parametres/AUTFR_RegimeImpot2026.pdf"
+ref = "Exemption 2026 : Tableau 3 de Finances Québec. Formule : TP-776.42 (2025-10), lignes 1, 25, 157.5, 157.9, 157.12, 250 et 254 (https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-776.42%282025-10%29.pdf); base signée et rajout de la déduction pour travailleur"
 status = "derived"
 
 [health_services_fund]
@@ -109,3 +109,9 @@ monthly_maximum_second_half = 65.75
 source = "https://www.ramq.gouv.qc.ca/fr/salle-presse/communiques/2026-06-30/ajustement-tarifs-personnes-couvertes-regime-public-assurance"
 ref = "RAMQ (2026-06-30) : prime annuelle de 789 $ dès juillet 2026, 766 $ avant. Maximum de l'année = 6 × 63,83 + 6 × 65,75 = 777,48 $, arrondi au dollar comme sur l'Annexe K 2025 (754,98 $ imprimé 755 $). Exemption : 19 890 $ (Annexe K 2025, ligne 41) indexée de 2,05 %, estimation. Conjoint et enfants : montants 2025 indexés de 2,05 %, arrondis au 10 $ le plus proche, estimations. Indexation : https://cdn-contenu.quebec.ca/cdn-contenu/adm/min/finances/publications-adm/parametres/AUTFR_RegimeImpot2026.pdf. Taux et prorata : Annexe K 2025, lignes 80, 85 et 88 (https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.K%282025-12%29.pdf), reconduits provisoirement. Plafonds mensuels : 766 / 12 = 63,83 et 789 / 12 = 65,75"
 status = "unpublished"
+
+[union_dues_credit]
+rate = 0.10
+source = "https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-397/"
+ref = "Lignes 397.1 et 397 : 10 % des cotisations syndicales, professionnelles ou autres admissibles, après exclusion des taxes remboursables"
+status = "rule_2025"

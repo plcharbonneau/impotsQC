@@ -4,6 +4,48 @@ Versions selon SemVer. Une entrée **« change les résultats »** signale toute
 déplace un montant calculé pour une année déjà publiée; elle cite la source officielle qui la
 justifie.
 
+## 0.6.0 — en préparation
+
+**Change l'API et change les résultats.** Les valeurs numériques des paramètres existants
+restent inchangées; les formules erronées et les revenus désormais explicitement saisis sont
+traités conformément aux sources officielles.
+
+- Entrées `PensionIncome`, `Benefits` et `Deductions` : rentes RPA/REER, FERR admissibles de
+  survivant, AE/RQAP, suppléments fédéraux, aide sociale, indemnités, trop-perçus remboursés,
+  cotisations RPA et cotisations syndicales/professionnelles distinctes fédéral/Québec.
+  Les inconnues déterminantes bloquent le calcul et fournissent les questions à poser.
+- Nouveau document `5000-D1`, grilles `23500-*`, `25000-*` et `31400-*`. Récupération AE
+  avant PSV/SRG, déduction des suppléments réduite de la part récupérée. Sources :
+  [feuille de travail fédérale 2025](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25f.pdf),
+  [T4E 2025](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t4e/t4e-25b.pdf),
+  [T4E 2026](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t4e/t4e-26b.pdf),
+  [déduction 25000](https://www.canada.ca/fr/agence-revenu/services/impot/particuliers/sujets/tout-votre-declaration-revenus/declaration-revenus/remplir-declaration-revenus/deductions-credits-depenses/ligne-25000-deduction-autres-paiements.html).
+- **Correction REER ordinaire** : composante de `TP-1:122` → `TP-1:154`; elle n'alimente plus
+  le crédit de retraite de l'annexe B. Les rentes de REER échu et paiements de FERR restent à
+  122. Le revenu total ne change pas; l'impôt peut augmenter si l'ancien crédit était accordé.
+  Source : [TP-1, ligne 154, point 6](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/96-a-164-revenu-total/ligne-154/point-6/).
+- Le revenu net fédéral est borné à zéro. L'IMR conserve cependant la base signée avant les
+  rajouts, dans les deux régimes. Ajout de la déduction pour travailleur au TP-776.42 et des
+  cotisations syndicales au T691. Sources :
+  [T691, partie 1 et note 1](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t691/t691-25f.pdf),
+  [TP-776.42, lignes 1, 157.5, 157.9 et 158](https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-776.42%282025-10%29.pdf).
+- Québec : aide sociale imposable (147), indemnités et suppléments déduits au revenu imposable
+  (148/295), redressement du montant personnel fourni par le relevé 5 (358/359), crédit de
+  cotisations de 10 % (397.1/397). L'annexe F exclut les prestations 147/148 et déduit la partie
+  AE des récupérations. Sources :
+  [ligne 295](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/276-a-298-2-revenu-imposable/ligne-295/),
+  [ligne 358](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-358/),
+  [ligne 397](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-397/),
+  [annexe F](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.F%282025-12%29.pdf).
+- L'adaptateur `ParentIncome.from_tax_return` conserve les retraits REER déplacés et reprend
+  l'AE/RQAP et les prestations de remplacement, sans inclure l'aide sociale exclue.
+- Aucune clé de formulaire supprimée, aucun alias retiré. Seule la composante REER ordinaire
+  change de ligne; la ligne 122 reste disponible pour ses autres revenus.
+- Validation de cette étape : 437 tests réussis; sans oracle, 335 réussis et 22 sautés.
+  Salarié : 36,512 → 37,596 µs (+3,0 %); retraité : 31,974 → 34,936 µs (+9,3 %).
+  Mesure appariée, détails et contrainte historique encore à satisfaire dans `PLAN.md`.
+- La portée complète demandée et les éléments encore à faire figurent dans `IMPLEMENTATION.md`.
+
 ## 0.5.0 — 2026-10-04
 
 **Change l'API et change les résultats.** La couverture RAMQ annuelle et l'absence de conjoint

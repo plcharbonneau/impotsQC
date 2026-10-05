@@ -22,12 +22,13 @@ from . import rules
 from .child_support import ChildSupportCase, ChildSupportResult, ParentIncome, compute_child_support
 from .federal import federal_return
 from .model import Form, Line, Taxpayer, TaxReturn
+from .inputs import Benefits, Deductions, PensionIncome
 from .parameters import PROVISIONAL_STATUSES, load_parameters
 from .quebec import quebec_return
 from .questions import MissingInformationError, required_questions
 
-__version__ = "0.5.0"
-__all__ = ["ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
+__version__ = "0.6.0"
+__all__ = ["Benefits", "Deductions", "PensionIncome", "ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
            "MissingInformationError", "required_questions", "compute", "compute_child_support", "load_parameters"]
 
 _PARAMS: dict[int, dict] = {}
@@ -75,6 +76,6 @@ def _warnings(tp: Taxpayer, params: dict, forms: dict[str, Form]) -> tuple[str, 
         out.append(f"Impôt minimum fédéral : {extra:,.0f} $ d'impôt additionnel, reportable sur sept ans "
                    "(report non modélisé).")
     if "TP-1.D.E" in forms and forms["TP-1.D.E"].amount("15") > max(0.0, quebec.amount("430")):
-        out.append("Impôt minimum du Québec : portée de calcul héritée du moteur 0.2; "
+        out.append("Impôt minimum du Québec : impôt additionnel; "
                    "report sur sept ans non modélisé.")
     return tuple(out)

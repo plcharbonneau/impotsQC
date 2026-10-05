@@ -4,7 +4,7 @@ Calcul des déclarations de revenus **fédérale (T1)** et **du Québec (TP-1)**
 et de la **pension alimentaire pour enfants** selon le modèle québécois, pour un script ou un agent. On décrit un contribuable fictif et on obtient chaque ligne des
 formulaires et annexes : montant, numéro de ligne officiel, libellé, et la règle appliquée.
 
-> **Statut : 0.5.0 (alpha).** Le calcul exige maintenant une réponse explicite sur le conjoint
+> **Statut : 0.6.0 en préparation (alpha).** Le calcul exige maintenant une réponse explicite sur le conjoint
 > fiscal et les mois exemptés de cotisation RAMQ. L'annexe K utilise le revenu familial, les
 > enfants admissibles et les deux semestres. Les paramètres RAMQ 2026 restent provisoires.
 > Voir les [limites de calcul](PLAN.md#assurance-medicaments-050).
@@ -15,6 +15,9 @@ formulaires et annexes : montant, numéro de ligne officiel, libellé, et la rè
 - Situations : **salarié** (emploi, cotisations RRQ/AE/RQAP, déduction REER, placements) et
   **retraité** (FERR et REER, RRQ, PSV et son remboursement, crédits d'âge, de pension, de
   personne vivant seule, de prolongation de carrière), dividendes et gains en capital.
+- Revenus supplémentaires : rentes de RPA/REER, FERR de survivant, AE régulière/spéciale,
+  RQAP, SRG reçu, aide sociale et indemnités de remplacement. Cotisations RPA et cotisations
+  syndicales/professionnelles : déduction fédérale et crédit québécois distincts.
 - Assurance médicaments : personne avec ou sans conjoint fiscal, revenu net du conjoint,
   enfants admissibles et mois exemptés confirmés. Chaque personne paie sa propre cotisation.
 - Hors portée pour l'instant : travail autonome, crédits et transferts entre conjoints,
@@ -44,6 +47,7 @@ Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée 
 | Code | Document | Condition de présence |
 | --- | --- | --- |
 | `T1`, `TP-1` | Déclarations principales | Toujours |
+| `5000-D1` | Feuille de travail fédérale | Pension admissible, suppléments fédéraux ou récupération AE/PSV; grilles 23500, 25000 et 31400 |
 | `5000-S3`, `TP-1.D.G` | Gains en capital | Gain net positif fourni; total et inclusion seulement |
 | `5005-S8` | Cotisations au RRQ | Revenu d'emploi positif, 19 à 72 ans, hypothèse d'année complète |
 | `TP-1.D.U` | Déduction RRQ du salarié | Cotisation bonifiée positive, 19 à 72 ans |
@@ -94,13 +98,51 @@ numéro, son libellé, son montant, sa règle, ses `refs` (`"CODE:ligne"`) et se
 `r.to_dict()` contient `year`, `taxpayer`, `forms`, `summary` et `warnings`. Chaque entrée de
 `forms` contient les métadonnées du document et un dictionnaire `lines`; chaque ligne contient
 `label`, `amount`, `rule`, `refs` et `params`. Les montants sont arrondis au cent dans le JSON
-seulement. Les clés historiques `federal` et `quebec` restent disponibles en 0.5
+seulement. Les clés historiques `federal` et `quebec` restent disponibles en 0.6
 comme dictionnaires de lignes; leur retrait est différé. Les anciennes clés préfixées sont déplacées dans leurs annexes :
 voir la [table de migration](CHANGELOG.md#030--2026-10-04).
 
 La numérotation et les versions des formulaires fiscaux sont celles de 2025. Pour l'année 2026,
 les métadonnées portent le statut `rule_2025`, avec les paramètres fiscaux de 2026; les PDF 2026
 ne sont pas encore utilisés.
+
+### Pensions, prestations et cotisations
+
+Les entrées décrivent la situation fiscale; les numéros de formulaire restent dans les sorties.
+Une rente de RPA est distincte d'un retrait REER ordinaire, lequel va à `TP-1:154` et n'ouvre
+pas le montant pour revenus de retraite. `PensionIncome` couvre les rentes canadiennes et FERR;
+les transferts directs et pensions étrangères ne sont pas inclus dans ce type.
+
+```python
+from impotsqc import Benefits, Deductions, PensionIncome, Taxpayer, compute
+
+r = compute(Taxpayer(
+    year=2025, age=55, has_spouse=False,
+    drug_plan_exempt_months=tuple(range(1, 13)),  # assurance privée confirmée, profil fictif
+    pensions=(PensionIncome(amount=20_000, kind="rpp"),),
+    benefits=Benefits(ei_regular=5_000, ei_repayment_exempt=False),
+    deductions=Deductions(rpp=1_000, union_dues_federal=575, union_dues_quebec=500),
+))
+r.forms["5000-D1"]["31400-8"].amount  # revenu admissible au montant pour pension
+r.forms["T1"]["20700"].amount          # déduction RPA
+r.forms["TP-1"]["397"].amount         # crédit québécois de cotisations syndicales
+```
+
+Pour `kind="rrif"` ou `"rrsp_annuity"` avant 65 ans, confirmer `from_deceased_spouse`.
+Les prestations AE régulières, spéciales autres que parentales, de maternité/parentales et RQAP
+se saisissent respectivement dans `ei_regular`, `ei_special`, `ei_maternity_parental` et `qpip`,
+sans doublon. `ei_repayment_exempt` exige une réponse explicite dès qu'il y a de l'AE régulière.
+Les remboursements de trop-perçus (`ei_repaid`, `qpip_repaid`, `oas_overpayment_recovered`) sont
+les sommes déductibles dans l'année; le moteur calcule séparément la récupération selon le revenu.
+Le choix d'imputer un remboursement à une année antérieure reste à ajouter.
+
+L'aide sociale fédérale (`social_assistance`) et québécoise (`quebec_social_assistance`) peuvent
+être attribuées différemment entre conjoints : le second montant doit être confirmé, même à zéro.
+Pour les indemnités, fournir `quebec_replacement_adjustment` depuis la case M du relevé 5, ou
+un TP-752.0.0.6 déjà rempli, sans déduire ce redressement du seul montant des indemnités.
+Le SRG fourni dans `federal_supplements` est un montant **reçu**, pas une prestation prévisionnelle.
+
+La suite de l'implémentation complète est suivie dans [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ### Questions à poser avant le calcul
 

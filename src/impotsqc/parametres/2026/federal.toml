@@ -51,7 +51,7 @@ status = "published"
 maximum = 2_000
 minimum_age_for_rrif = 65
 source = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31400-pension-income-amount.html"
-ref = "Ligne 31400 : FERR et rente REER admissibles à 65 ans et plus; PSV, RPC/RRQ et retraits forfaitaires REER exclus. Feuille 5000-D1 2025 : le moindre du revenu admissible et de 2 000 $"
+ref = "Ligne 31400, maximum 2 000 $ : rentes de RPA à tout âge; rentes REER et FERR à 65 ans ou en raison du décès du conjoint; PSV, RPC/RRQ et retraits ordinaires REER exclus. Grille 31400 de 5000-D1 (2025)"
 status = "rule_2025"
 
 [canada_employment_amount]
@@ -97,3 +97,10 @@ credit_fraction = 0.5
 source = "https://www.budget.canada.ca/2023/report-rapport/tm-mf-en.html"
 ref = "T691 2025 : revenu imposable rajusté (partie 1 : gains à 100 %, dividendes au montant réel, 50 % des déductions des lignes 54 à 62, dont 22215), montant minimum = 20,5 % au-delà de l'exemption − 50 % de la ligne 33800 (ligne 98), impôt fédéral = le plus élevé des deux (partie 6, ligne 41700; abattement du Québec calculé sur ce montant, note 14). Budget 2023 : taux de 20,5 %, exemption = début de la 4e tranche (indexée), gains inclus à 100 %, 50 % de la plupart des crédits. Ligne 41700 : 177 882 $ pour 2025; 181 440 $ dérivé pour 2026"
 status = "derived"
+
+[ei_repayment]
+threshold = 86125
+rate = 0.30
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t4e/t4e-26b.pdf"
+ref = "Tableau de remboursement du T4E 2026 : 30 % du moindre du revenu net excédentaire et des prestations régulières (case 15 moins case 30); exemption selon case 7"
+status = "published"

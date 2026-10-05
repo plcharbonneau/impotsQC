@@ -9,26 +9,32 @@ from .model import Form, Line, Taxpayer
 
 
 def minimum_tax(tp: Taxpayer, params: dict, federal: Form, dividend_gross_up: float) -> Form | None:
-    """Remplit le T691 si le revenu rajusté dépasse l'exemption, sans modifier la règle de 0.2."""
+    """Remplit le T691 si le revenu rajusté dépasse l'exemption, avec une base signée avant rajouts."""
     t = params["federal"]["minimum_tax"]
     inclusion = params["federal"]["capital_gains"]["inclusion_rate"]
-    taxable, enhanced = federal.amount("26000"), federal.amount("22215")
+    taxable = federal.amount("23400") - federal.amount("23500") - federal.amount("25000")
+    enhanced, dues = federal.amount("22215"), federal.amount("21200")
     amt = rules.minimum_tax(taxable_income=taxable, capital_gains=tp.capital_gains, capital_gains_inclusion=inclusion,
-                            addback_deductions=enhanced, dividend_gross_up=dividend_gross_up,
+                            addback_deductions=enhanced + dues, dividend_gross_up=dividend_gross_up,
                             credits=federal.amount("33800"), table=t)
     if amt.net_adjusted_taxable_income <= 0:
         return None
     f = Form.from_parameters("T691", params)
-    f.add("P1-1", "Revenu imposable", taxable, "base du moteur 0.2, après plancher à zéro",
-          refs=("T1:26000",))
+    f.add("P1-1", "Revenu imposable", taxable, "recalcul sans plancher à zéro au revenu net ou imposable",
+          refs=("T1:23400", "T1:23500") + (("T1:25000",) if "25000" in federal.lines else ()))
     gains = f.add("P1-23", "Partie non imposable des gains en capital", tp.capital_gains * (t["capital_gains_inclusion"] - inclusion),
                   "gain réalisé × différence des taux d'inclusion",
                   refs=("T1:12700",),
                   params=("federal.capital_gains.inclusion_rate", "federal.minimum_tax.capital_gains_inclusion"))
     f.add("P1-58", "Déduction pour les cotisations bonifiées au RPC ou au RRQ", enhanced,
           refs=("T1:22215",))
-    addback = f.add("P1-80", "Déductions rajoutées", t["deduction_addback_rate"] * enhanced, "déductions visées dans la portée",
-                    refs=("T691:P1-58",),
+    deduction_refs = ("T691:P1-58",)
+    if "21200" in federal.lines:
+        f.add("P1-51", "Cotisations annuelles syndicales, professionnelles et semblables", dues,
+              refs=("T1:21200",))
+        deduction_refs += ("T691:P1-51",)
+    addback = f.add("P1-80", "Déductions rajoutées", t["deduction_addback_rate"] * (enhanced + dues),
+                    "déductions visées dans la portée", refs=deduction_refs,
                     params=("federal.minimum_tax.deduction_addback_rate",))
     f.add("P1-83", "Revenu avant réductions", taxable + gains + addback, "lignes 1 + 23 + 80 dans la portée",
           refs=("T691:P1-1", "T691:P1-23", "T691:P1-80"))
@@ -174,4 +180,85 @@ def qpp_employment(tp: Taxpayer, params: dict, qpp: rules.QppContributions) -> F
         Line("P2-47", "Déduction pour les cotisations bonifiées au RRQ sur un revenu d'emploi", qpp.enhanced,
              refs=("5005-S8:P2-42", "5005-S8:P2-46")),
     )}
+    return f
+
+
+def worksheet(tp: Taxpayer, params: dict, federal: Form, eligible_annuity: float) -> Form | None:
+    """Feuille 5000-D1, grilles 23500, 25000 et 31400, seulement lorsqu'une grille s'applique.
+
+    Les revenus PUGE, REEI, pensions étrangères et transferts directs ne sont pas encore
+    des entrées : les lignes correspondantes ne sont pas créées. Les sous-totaux indiquent
+    cette portée. La récupération d'AE précède celle de la PSV et des suppléments fédéraux.
+    """
+    tables = params["federal"]
+    benefits = tp.benefits
+    before = federal.amount("23400")
+    ei = 0.0
+    supplements = overpayment = 0.0
+    if benefits is not None:
+        supplements = benefits.federal_supplements
+        overpayment = benefits.oas_overpayment_recovered
+        if benefits.ei_regular and benefits.ei_repayment_exempt is False:
+            table = tables["ei_repayment"]
+            ei = table["rate"] * min(max(0.0, benefits.ei_regular - benefits.ei_repaid),
+                                     max(0.0, before - table["threshold"]))
+    oas = tables["oas_recovery"]
+    ceiling = max(0.0, tp.oas_pension + supplements - overpayment)
+    recovered = min(ceiling, max(0.0, before - ei - oas["threshold"]) * oas["rate"])
+    pension = federal.amount("11500") + eligible_annuity
+    if not (ei or recovered or pension or supplements):
+        return None
+    f = Form.from_parameters("5000-D1", params)
+    if ei or recovered:
+        f.add("23500-1", "Pension de la sécurité de la vieillesse", tp.oas_pension,
+              refs=("T1:11300",))
+        f.add("23500-2", "Versement net des suppléments fédéraux", supplements,
+              refs=("T1:14600",) if "14600" in federal.lines else ())
+        f.add("23500-3", "Ligne 1 plus ligne 2", tp.oas_pension + supplements,
+              refs=("5000-D1:23500-1", "5000-D1:23500-2"))
+        f.add("23500-4", "Paiement en trop de la PSV recouvré", overpayment,
+              "case 20 du T4A(OAS), remboursement de trop-perçu")
+        f.add("23500-5", "Ligne 3 moins ligne 4", ceiling, "minimum zéro",
+              refs=("5000-D1:23500-3", "5000-D1:23500-4"))
+        f.add("23500-6", "Revenu net avant rajustements", before, refs=("T1:23400",))
+        f.add("23500-7", "Remboursement de prestations d'AE", ei,
+              "T4E : 30 % du moindre de l'excédent du revenu net et de la case 15 moins la case 30; "
+              "prestations spéciales et RQAP exclus; exemption confirmée par l'appelant",
+              refs=("T1:23400",) + (("T1:11900",) if "11900" in federal.lines else ())
+                   + (("T1:23200",) if "23200" in federal.lines else ()),
+              params=("federal.ei_repayment.threshold", "federal.ei_repayment.rate"))
+        f.add("23500-10", "Total des lignes 7 à 9", ei, "aucune PUGE ni REEI dans les entrées",
+              refs=("5000-D1:23500-7",))
+        f.add("23500-11", "Ligne 6 moins ligne 10", before - ei,
+              refs=("5000-D1:23500-6", "5000-D1:23500-10"))
+        f.add("23500-15", "Revenu net rajusté", before - ei, "aucun remboursement PUGE ou REEI",
+              refs=("5000-D1:23500-11",))
+        f.add("23500-16", "Montant de base de PSV", oas["threshold"],
+              params=("federal.oas_recovery.threshold",))
+        excess = f.add("23500-17", "Ligne 15 moins ligne 16", max(0.0, before - ei - oas["threshold"]),
+                       "minimum zéro", refs=("5000-D1:23500-15", "5000-D1:23500-16"))
+        f.add("23500-18", "Montant de la ligne 17 multiplié par 15 %", excess * oas["rate"],
+              refs=("5000-D1:23500-17",), params=("federal.oas_recovery.rate",))
+        f.add("23500-19", "Montant le moins élevé : ligne 5 ou ligne 18", recovered,
+              refs=("5000-D1:23500-5", "5000-D1:23500-18"))
+        f.add("23500-20", "Montant de la ligne 7", ei, refs=("5000-D1:23500-7",))
+        f.add("23500-21", "Remboursement des prestations de programmes sociaux", recovered + ei,
+              refs=("5000-D1:23500-19", "5000-D1:23500-20"))
+    if supplements:
+        f.add("25000-1", "Montant de la ligne 23400", max(0.0, before), "minimum zéro",
+              refs=("T1:23400",))
+        f.add("25000-5", "Ligne 1 moins ligne 4", max(0.0, before), "aucune PUGE ni REEI dans les entrées",
+              refs=("5000-D1:25000-1",))
+        f.add("25000-9", "Ligne 5 plus ligne 8", max(0.0, before), "aucun remboursement PUGE ni REEI; "
+              "tableau spécial de la ligne 25000 lorsque ce résultat dépasse le seuil PSV",
+              refs=("5000-D1:25000-5",), params=("federal.oas_recovery.threshold",))
+    if pension:
+        f.add("31400-1", "Montant de la ligne 11500", federal.amount("11500"), refs=("T1:11500",))
+        f.add("31400-6", "Ligne 1 moins ligne 5", federal.amount("11500"),
+              "pensions canadiennes admissibles, sans transfert direct", refs=("5000-D1:31400-1",))
+        f.add("31400-7", "Paiements de rente de la ligne 12900", eligible_annuity,
+              "65 ans et plus ou rente reçue en raison du décès du conjoint",
+              refs=("T1:12900",), params=("federal.pension_amount.minimum_age_for_rrif",))
+        f.add("31400-8", "Ligne 6 plus ligne 7", pension,
+              refs=("5000-D1:31400-6", "5000-D1:31400-7"))
     return f

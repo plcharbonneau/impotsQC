@@ -278,26 +278,24 @@ un formulaire web (à faire avec l'accord de PL). Hors portée : ajustements mot
 
 ## Points d'interprétation
 
-Deux règles où impotsqc suit sa lecture du formulaire officiel et où un calculateur externe
-diverge. Chacune est à confirmer par un logiciel certifié par Revenu Québec.
+Les divergences historiques sont conservées dans les relevés locaux; une correction du moteur
+ne modifie pas ces relevés et doit supprimer sa tolérance dans les tests.
 
-1. **Retraits REER et montant pour revenus de retraite (annexe B).** Le guide du TP-1 inscrit à
-   la ligne 122 « les prestations d'un régime enregistré d'épargne-retraite (REER) », avec les
-   FERR et les rentes. L'annexe B calcule le montant sur les lignes 122 et 123 sans condition
-   d'âge; le guide, ligne 361, n'exclut que la PSV, les rentes du RRQ et du RPC, et la convention
-   de retraite. impotsqc inclut donc les retraits REER. Effet : jusqu'à environ 370 $ d'impôt du
-   Québec en moins par année. Cas décisif : 66 ans, retrait REER de 60 000 $, PSV de 8 900 $,
-   année 2025. impotsqc donne 2 349 $ à la ligne 361.
+1. **Retraits REER ordinaires : corrigé en 0.6.** Ils appartiennent à la ligne 154, point 6,
+   et sont exclus du montant pour revenus de retraite. La ligne 122 accueille notamment les
+   rentes de REER échu et les paiements FERR. L'ancienne interprétation incluait à tort les
+   retraits ordinaires dans B. Les trois écarts historiques par année sont désormais résolus.
+   Source officielle et migration : `CHANGELOG.md`, version 0.6.
 2. **Maximum de la cotisation au régime d'assurance médicaments 2026 (annexe K).** Le maximum de
    l'année est la somme de six mois à chacun des deux tarifs mensuels, arrondie au dollar. C'est
    la règle de l'annexe K 2025 : 6 × 62,00 + 6 × 63,83 = 754,98 $, imprimé 755 $. Avec la prime
    de 789 $ annoncée par la RAMQ le 2026-06-30, cela donne 777 $ pour 2026. Valeur provisoire
    jusqu'à l'annexe K 2026. En 2025, l'oracle et impotsqc donnent tous deux 755 $.
-3. **Impôt minimum du Québec.** Taux de 19 %, exemption indexée, gains en capital à 100 % et 50 %
-   des crédits non remboursables : bulletin d'information 2023-4 de Finances Québec et Chaire en
-   fiscalité et en finances publiques. La refonte 0.3 a vérifié la numérotation sur le TP-776.42, mais conserve le calcul 0.2 :
-   revenu imposable après plancher à zéro et cotisations bonifiées seules dans les déductions
-   rajoutées. Les corrections fiscales sont distinctes de cette refonte sans changement de montants.
+3. **Impôt minimum : bases corrigées en 0.6.** Les deux régimes conservent le revenu imposable
+   signé avant leurs rajouts. Le Québec rajoute aussi 50 % de la déduction pour travailleur
+   (TP-776.42, ligne 157.9); le fédéral rajoute la part visée des cotisations syndicales
+   (T691, ligne 51). Le report sur sept ans et les interactions avec les déductions/crédits
+   encore absents du moteur restent à implémenter.
 
 ## Hors portée de la v0.1
 
@@ -305,3 +303,40 @@ La RAMQ des couples et les exemptions pour enfants sont couvertes depuis 0.5. Re
 travail autonome, calcul fiscal complet du couple, fractionnement du revenu de pension, transferts
 entre conjoints, crédits pour enfants et crédits remboursables (solidarité, allocation famille), frais médicaux, dons,
 acomptes provisionnels, pertes reportées, résidents d'une autre province.
+
+
+## Extension des revenus et déductions (0.6 en cours)
+
+Première étape du registre [IMPLEMENTATION.md](IMPLEMENTATION.md) : pensions admissibles,
+AE/RQAP et récupérations coordonnées avec la PSV, suppléments fédéraux reçus, aide sociale,
+indemnités et redressement québécois fourni, cotisations RPA et syndicales/professionnelles.
+Les différences fédéral/Québec sont conservées dans les entrées et dans les lignes officielles.
+Les grilles 23500, 25000 et 31400 sont lisibles dans `forms["5000-D1"]` avec leurs dépendances.
+Aucun objet annexe n'est créé pour une situation absente.
+
+L'attribution familiale de l'aide sociale reste fournie explicitement; le calcul coordonné du
+ménage viendra avec Q01/Q02. Le TP-752.0.0.6 n'est pas rempli par le moteur : le redressement
+qui en résulte peut être saisi. La déduction des trop-perçus vise l'année courante; le choix
+rétroactif et les crédits pour ces remboursements demeurent à compléter.
+
+
+Validation de cette étape : **437 tests réussis**, dont validation locale, résolutions des refs,
+absence de cycles, JSON, continuité et revenu disponible croissant. Copie sans oracle :
+**335 réussis, 22 sautés**. Comparaison des TOML avec `main` : aucune valeur numérique
+préexistante modifiée. Les tests historiques REER vérifient maintenant la concordance sans
+l'exception qui masquait l'ancienne erreur; leurs relevés sont inchangés.
+
+Mesure appariée de la version 0.5 (`main` 226de1f) et du code 0.6 en préparation, même Python
+3.14.3, paramètres chauds, médiane de sept séries de 10 000 appels de `benchmarks/compute.py` :
+
+| Profil | Avant 0.5 (µs) | Après cette étape (µs) | Rapport |
+| --- | ---: | ---: | ---: |
+| salarie | 36.512 | 37.596 | 1.030× |
+| retraite | 31.974 | 34.936 | 1.093× |
+| carriere | 43.610 | 45.002 | 1.032× |
+| gain_capital | 42.051 | 43.695 | 1.039× |
+| sans_revenu | 19.788 | 20.766 | 1.049× |
+
+Le profil salarié est à 1,60× la référence historique 0.3 (23,531 µs), légèrement au-dessus
+de la cible approximative de 1,5×. Cette cible et le mode rapide A03 restent ouverts dans le
+registre; la faible variation par rapport à 0.5 ne vaut pas validation de la contrainte globale.

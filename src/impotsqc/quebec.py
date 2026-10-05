@@ -3,7 +3,7 @@
 """Déclaration de revenus du Québec TP-1, ligne par ligne, avec les annexes B, F et K.
 
 Numéros et libellés : TP-1.D (2025-12) et ses annexes; la version 2026 n'est pas publiée au
-2026-10-04. Sont nuls hors portée : crédits transférés entre conjoints (431), report de l'impôt
+2026-10-04. Sont nuls hors portée : report de l'impôt
 minimum d'une année passée. L'impôt minimum de remplacement (annexe E, partie B; TP-776.42) utilise
 la base imposable signée et les rajouts propres au Québec, dans des formulaires distincts.
 """
@@ -159,14 +159,18 @@ def quebec_income(tp: Taxpayer, params: dict, qpp: QppContributions, oas_repayme
 def quebec_tax(tp: Taxpayer, params: dict, *, forms: dict[str, Form],
                spouse: TaxReturn | None = None, schedule_b_share: float = 1.0) -> Form:
     """Complète une déclaration dont les revenus sont connus, avec l’annexe B du ménage."""
+    quebec_personal_credits(tp, params, forms=forms, spouse=spouse, schedule_b_share=schedule_b_share)
+    return quebec_final_tax(tp, params, forms=forms, spouse=spouse)
+
+
+def quebec_personal_credits(tp: Taxpayer, params: dict, *, forms: dict[str, Form],
+                            spouse: TaxReturn | None = None, schedule_b_share: float = 1.0) -> Form:
+    """Remplit les crédits propres au déclarant et conserve leur solde signé à la ligne 430."""
     qc = params["quebec"]
     f = forms["TP-1"]
     taxable = f.amount("299")
     eligible, other = rules.grossed_up_dividends(tp.eligible_dividends, tp.other_dividends, qc["dividends"])
     benefits = tp.benefits
-    benefit_repayments = benefits.ei_repaid + benefits.qpip_repaid if benefits is not None else 0.0
-    worksheet = forms.get("5000-D1")
-    ei_repayment = worksheet.amount("23500-7") if worksheet is not None else 0.0
 
     # Crédits d'impôt non remboursables
     base = f.add("350", "Montant personnel de base", qc["basic_personal_amount"]["amount"],
@@ -211,7 +215,8 @@ def quebec_tax(tp: Taxpayer, params: dict, *, forms: dict[str, Form],
     # Impôt
     f.add("406", "Crédits d'impôt non remboursables (ligne 399)", credits,
           refs=("TP-1:399",))
-    after = f.add("413", "Montant de la ligne 401 moins celui de la ligne 406", max(0.0, tax - credits),
+    after = f.add("413", "Montant de la ligne 401 moins celui de la ligne 406", tax - credits,
+                  "montant signé, crédits inutilisés conservés pour le transfert au conjoint",
                   refs=("TP-1:401", "TP-1:406"))
     dividend_credit = f.add("415", "Crédit d'impôt pour dividendes",
                             sum(rules.dividend_tax_credit(eligible, other, qc["dividends"])),
@@ -223,16 +228,31 @@ def quebec_tax(tp: Taxpayer, params: dict, *, forms: dict[str, Form],
     regular = f.add("430", "Montant de la ligne 413 moins celui de la ligne 425", after - dividend_credit,
                     refs=("TP-1:413", "TP-1:425"))
 
-    # TP-776.42 et annexe E : calculs courants, sans report d'années passées.
+    return f
+
+
+def quebec_final_tax(tp: Taxpayer, params: dict, *, forms: dict[str, Form],
+                     spouse: TaxReturn | None = None) -> Form:
+    """Applique les crédits transférés, l’impôt minimum et les cotisations du TP-1."""
+    f = forms["TP-1"]
+    qc = params["quebec"]
+    eligible, other = rules.grossed_up_dividends(tp.eligible_dividends, tp.other_dividends, qc["dividends"])
+    benefits = tp.benefits
+    benefit_repayments = benefits.ei_repaid + benefits.qpip_repaid if benefits is not None else 0.0
+    worksheet = forms.get("5000-D1")
+    ei_repayment = worksheet.amount("23500-7") if worksheet is not None else 0.0
+    regular = f.amount("430") - f.amount("431")
+    # TP-776.42 et annexe E : calculs courants, sans report d’années passées.
     annex_amt = quebec_schedules.minimum_tax(tp, params, f,
-        dividend_gross_up=(eligible - tp.eligible_dividends) + (other - tp.other_dividends))
+        dividend_gross_up=(eligible - tp.eligible_dividends) + (other - tp.other_dividends), spouse=spouse)
     if annex_amt is not None:
         forms[annex_amt.code] = annex_amt
         annex_e = quebec_schedules.schedule_e(params, f, annex_amt)
         forms[annex_e.code] = annex_e
     quebec_tax = f.add("432", "Impôt du Québec", annex_e.amount("18") if annex_amt is not None else max(0.0, regular),
                        "annexe E, ligne 18 si applicable; sinon impôt ordinaire, minimum zéro",
-                       refs=("TP-1.D.E:18",) if annex_amt is not None else ("TP-1:430",))
+                       refs=("TP-1.D.E:18",) if annex_amt is not None else
+                            (("TP-1:430", "TP-1:431") if "431" in f.lines else ("TP-1:430",)))
 
     annex_f = quebec_schedules.schedule_f(params, f, ei_repayment=ei_repayment, benefit_repayments=benefit_repayments)
     if annex_f is not None:

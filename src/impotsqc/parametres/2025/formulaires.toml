@@ -60,7 +60,7 @@ status = "published"
 title = "Impôt minimum de remplacement"
 version = "2025-10"
 source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-776.42%282025-10%29.pdf"
-ref = "TP-776.42, partie 1 et grilles 4, 5 et 7; revenu imposable modifié à la ligne 22"
+ref = "TP-776.42, partie 1 et grilles 4, 5, 7 et 8; revenu imposable modifié à la ligne 22"
 status = "published"
 
 ["FIXATION-PA"]
@@ -103,4 +103,18 @@ title = "Feuille de travail fédérale"
 version = "2025"
 source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25f.pdf"
 ref = "Grilles 23500, 25000 et 31400; clés préfixées par le numéro de la grille"
+status = "published"
+
+["5005-S2"]
+title = "Montants fédéraux transférés de votre époux ou conjoint de fait"
+version = "2025"
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-s2/5005-s2-25f.pdf"
+ref = "Annexe 2 propre au Québec, droits d’âge et de pension; lignes 35200, 35500 et 6 à 13"
+status = "published"
+
+["5000-S5"]
+title = "Montants pour époux ou conjoint de fait et les personnes à charge"
+version = "2025"
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s5/5000-s5-25f.pdf"
+ref = "Annexe 5, sections 30300 et 30425; numéros récurrents préfixés par la section"
 status = "published"

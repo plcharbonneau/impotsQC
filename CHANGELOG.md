@@ -54,10 +54,33 @@ traités conformément aux sources officielles.
   et [guide, ligne 361](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-361/).
 - Nouvelles lignes B `1.C`, `8.C`, `9.C` pour la colonne conjoint, sans renommer les clés de la
   colonne du déclarant. `CoupleReturn.refs` relie les déclarations; `Line.refs` reste local.
-  Les autres crédits/transferts et le fractionnement restent signalés comme non calculés.
+  Les liens des autres crédits ci-dessous réutilisent ce même contrat.
 - Coordination : 469 tests réussis, dont 31 nouveaux; sans données locales, 367 réussis et
   22 sautés. Comparaison exacte de 600 profils et 128 124 montants
   historiques. Salarié : 36,833 → 37,918 µs (1,029×). Aucun paramètre existant modifié.
+- Ajout de `CoupleOptions` : confirmations requises pour le montant fédéral pour conjoint,
+  son supplément pour infirmité et les transferts fédéraux. Les questions inconnues bloquent
+  `compute_couple`; les choix figurent dans son JSON. Ajout de `5000-S5` (30300/30425) et
+  `5005-S2` propre au Québec (âge/pension inutilisés vers 32600). Sources :
+  [annexe 5](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s5/5000-s5-25f.pdf),
+  [annexe 2 du Québec](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-s2/5005-s2-25f.pdf),
+  [TD1 2026](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/td1/td1-26f.pdf).
+- **Change les résultats** : les soldes TP-1:413/430 restent négatifs lorsque des crédits
+  sont inutilisés, même pour une personne seule; le plancher zéro est appliqué à 432. Dans
+  `compute_couple`, le transfert à 431 réduit l'impôt du bénéficiaire et les grilles 7/8 du
+  TP-776.42 recalculent la portion admise à l'IMR; l'annexe E reprend le transfert à 11.
+  Le transfert québécois peut être désactivé. Sources :
+  [TP-1, lignes 413 à 432](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D%282025-12%29.pdf),
+  [ligne 431](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/400-a-447-impot-et-cotisations/ligne-431/),
+  [TP-776.42, grille 8](https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-776.42%282025-10%29.pdf).
+- Les transferts d'études/handicap, les autres personnes à charge, l'annexe A et le
+  fractionnement restent à compléter. Les documents S2/S5 exposent uniquement les parties
+  calculées. Aucune clé existante renommée par ce lot.
+- Transferts : 497 tests réussis; copie publique : 395 réussis, 22 sautés. Les 600 totaux
+  historiques sont inchangés; huit montants intermédiaires sur 128 124 deviennent négatifs
+  (413/430). Aucune des 202 entrées numériques préexistantes des TOML ne change.
+- Performance du lot transferts : salarié 37,496 → 39,496 µs (1,053×); maximum 1,092×
+  parmi les cinq profils. La cible historique reste ouverte; détails dans `PLAN.md`.
 - La portée complète demandée et les éléments encore à faire figurent dans `IMPLEMENTATION.md`.
 
 ## 0.5.0 — 2026-10-04

@@ -23,13 +23,13 @@ from .child_support import ChildSupportCase, ChildSupportResult, ParentIncome, c
 from .federal import federal_return
 from .model import CoupleReturn, Form, Line, Taxpayer, TaxReturn
 from .couple import compute_couple, required_couple_questions
-from .inputs import Benefits, Deductions, PensionIncome
+from .inputs import Benefits, CoupleOptions, Deductions, PensionIncome
 from .parameters import PROVISIONAL_STATUSES, load_parameters
 from .quebec import quebec_return
 from .questions import MissingInformationError, required_questions
 
 __version__ = "0.6.0"
-__all__ = ["CoupleReturn", "compute_couple", "required_couple_questions", "Benefits", "Deductions", "PensionIncome", "ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
+__all__ = ["CoupleOptions", "CoupleReturn", "compute_couple", "required_couple_questions", "Benefits", "Deductions", "PensionIncome", "ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
            "MissingInformationError", "required_questions", "compute", "compute_child_support", "load_parameters"]
 
 _PARAMS: dict[int, dict] = {}
@@ -62,9 +62,9 @@ def _warnings(tp: Taxpayer, params: dict, forms: dict[str, Form], *, coordinated
     if params["quebec"]["drug_insurance"]["status"] in PROVISIONAL_STATUSES and len(tp.drug_plan_exempt_months) < 12:
         out.append(f"Ligne 447 (annexe K) : paramètres {tp.year} provisoires, non encore publiés.")
     if coordinated:
-        out.append("Couple : revenus familiaux et partage de l'annexe B coordonnés. Les montants "
-                   "fédéraux pour conjoint, transferts de crédits inutilisés et fractionnement de "
-                   "pension ne sont pas encore calculés; l'impôt total du couple reste incomplet. "
+        out.append("Couple : revenus, annexe B et crédits fédéraux des annexes 2/5 coordonnés. "
+                   "Les crédits pour autres personnes à charge, études et handicap ainsi que le "
+                   "fractionnement restent à compléter; le total reste incomplet. "
                    "Chaque conjoint paie sa propre cotisation RAMQ. Le partage de B n'est pas optimisé.")
     elif tp.has_spouse:
         out.append("Couple : la RAMQ utilise le revenu familial et le barème avec conjoint, "
@@ -81,7 +81,7 @@ def _warnings(tp: Taxpayer, params: dict, forms: dict[str, Form], *, coordinated
         extra = forms["T691"].amount("P5-11")
         out.append(f"Impôt minimum fédéral : {extra:,.0f} $ d'impôt additionnel, reportable sur sept ans "
                    "(report non modélisé).")
-    if "TP-1.D.E" in forms and forms["TP-1.D.E"].amount("15") > max(0.0, quebec.amount("430")):
+    if "TP-1.D.E" in forms and forms["TP-1.D.E"].amount("15") > forms["TP-1.D.E"].amount("14"):
         out.append("Impôt minimum du Québec : impôt additionnel; "
                    "report sur sept ans non modélisé.")
     return tuple(out)

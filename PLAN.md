@@ -361,9 +361,9 @@ références locales de `Line`, ce qui préserve les codes officiels et le contr
 Les montants d'allocation sont calculés à partir du droit commun et du choix, sans lien réciproque
 cyclique. Les liens d'entrée vers les revenus du conjoint se résolvent dans les deux déclarations.
 
-Cette étape couvre Q02 en partie et les droits/partages de Q03. Les montants fédéraux pour
-conjoint, transferts des annexes 2/5/A, TP-1:431, supplément monoparental et fractionnement
-restent explicitement dans le registre; le total des couples reçoit un avertissement d'incomplétude.
+Cette étape couvre Q02 en partie et les droits/partages de Q03. Le lot suivant ajoute les
+parties conjoint des annexes 2/5 et TP-1:431; l'annexe A, le supplément monoparental et le
+fractionnement restent dans le registre. Le total des couples porte un avertissement d'incomplétude.
 
 Validation : 469 tests réussis, dont 31 nouveaux cas de couples; sans données locales ignorées,
 367 réussis et 22 sautés. Montants 2025 indépendants, conservation du montant
@@ -387,3 +387,61 @@ de coût approximatif de 1,5× reste ouvert dans A03; ce tableau ne remplace pas
 
 Le couple retraité de l’exemple README (deux FERR de 25 000 $, 66 et 67 ans, couverture privée
 annuelle) prend 95,456 µs pour les deux déclarations coordonnées, selon le même protocole.
+
+
+## Crédits et transferts entre conjoints (0.6.0 en préparation)
+
+Le T1 et le TP-1 séparent maintenant revenus, droits personnels et impôt final, dans les mêmes
+objets Form. Le calcul du montant pour conjoint et des crédits transférables consulte les
+revenus définitifs et les droits personnels du partenaire avant de compléter les deux impôts.
+Aucun formulaire complet n'est calculé puis jeté.
+
+- `CoupleOptions` demande une confirmation du soutien/admissibilité du conjoint et des
+  conditions fédérales; le statut québécois au 31 décembre ne les implique pas.
+- `5000-S5` : sections 30300 et 30425; `5005-S2` : montants inutilisés d'âge/pension vers
+  32600. Les droits de handicap et d'études compléteront S2 avec leurs propres modules.
+- TP-1:413 et 430 conservent les valeurs négatives prescrites. Le bénéficiaire déduit à 432
+  la valeur absolue reçue à 431; le cédant reprend son solde négatif à 431. Le choix
+  `transfer_unused_quebec=False` désactive ce transfert.
+- La grille 8 du TP-776.42 recalcule le crédit transférable admis à l'IMR depuis les crédits
+  et l'impôt du conjoint : il peut différer de la moitié de 431 en présence de dividendes.
+  Les attributions B.1/B.2 d'études et de dons restent à ajouter avec ces entrées.
+- Les liens interpersonnels sont dans `CoupleReturn.refs`; ses choix et le partage sont
+  sérialisés. Aucun crédit de conjoint n'est construit dans `compute` individuel.
+
+Sources : [annexe 2 du Québec](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-s2/5005-s2-25f.pdf),
+[annexe 5](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s5/5000-s5-25f.pdf),
+[TD1 2026](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/td1/td1-26f.pdf),
+[TP-1 2025](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D%282025-12%29.pdf),
+[guide de la ligne 431](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/400-a-447-impot-et-cotisations/ligne-431/),
+[TP-776.42, grilles 7/8](https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-776.42%282025-10%29.pdf).
+
+Validation : 497 tests, dont 28 nouveaux cas de transferts; copie sans données locales :
+395 réussis et 22 sautés. Cas 2025/2026, infirmité, extinction, pension avant 65 ans,
+IMR/dividendes, non-double-comptage, symétrie, questions, références acycliques et JSON.
+600 profils comparés à adb1d3c : tous les totaux inchangés; sur 128 124 montants, huit soldes
+413/430 deviennent négatifs conformément au TP-1. Les 202 entrées numériques préexistantes
+des TOML sont identiques.
+
+
+Mesure appariée de ce lot (avant : adb1d3c; après nettoyage des références du chemin
+individuel), Python 3.14.3, médiane de 7 × 10 000 appels, entrées préconstruites, paramètres
+chauds et sans JSON :
+
+| Profil | Avant (µs) | Après (µs) | Rapport |
+| --- | ---: | ---: | ---: |
+| Salarié | 37,496 | 39,496 | 1,053× |
+| Retraité | 34,567 | 37,133 | 1,074× |
+| Prolongation de carrière | 44,635 | 48,755 | 1,092× |
+| Gain en capital | 43,222 | 47,183 | 1,092× |
+| Sans revenu | 20,807 | 22,233 | 1,069× |
+
+La première mesure avant nettoyage était de 42,042 µs pour le salarié; les références des
+crédits individuels ne sont plus reconstruites ni cherchées parmi des lignes encore absentes.
+Le calcul individuel ne construit ni options de couple ni annexes 2/5. Le salarié reste à
+1,68× la référence historique 0.3 (23,531 µs); A03 et la cible approximative de 1,5× demeurent
+ouverts, sans déplacement de la référence historique.
+
+Le calcul coordonné de deux FERR de 25 000 $ (66 et 67 ans, 2025, assurance privée annuelle,
+partage égal de B, transferts fédéraux confirmés) prend 111,817 µs pour les deux déclarations,
+selon le même protocole. Le lot précédent, qui ne calculait pas ces transferts, prenait 95,456 µs.

@@ -22,6 +22,8 @@ formulaires et annexes : montant, numéro de ligne officiel, libellé, et la rè
   enfants admissibles et mois exemptés confirmés. Chaque personne paie sa propre cotisation.
 - Couples : `compute_couple` calcule les revenus nets des deux personnes, les réutilise pour
   la RAMQ et met en commun les droits d'âge/retraite/vivre seul de l'annexe B avant partage.
+  Il applique aussi les montants fédéraux pour conjoint soutenu (annexe 5), les transferts de
+  droits d'âge/pension (annexe 2 du Québec) et les crédits inutilisés québécois (ligne 431).
 - Hors portée pour l'instant : travail autonome, autres crédits et transferts entre conjoints,
   fractionnement de pension, crédits pour enfants, frais médicaux, dons, crédits remboursables,
   acomptes provisionnels. Le calcul global d'un couple reste incomplet et porte un avertissement.
@@ -48,14 +50,15 @@ r.to_dict()                    # JSON, pour un agent
 Pour coordonner deux contribuables fictifs, sans ressaisir le revenu du conjoint :
 
 ```python
-from impotsqc import Taxpayer, compute_couple, required_couple_questions
+from impotsqc import CoupleOptions, Taxpayer, compute_couple, required_couple_questions
 
 first = Taxpayer(year=2025, age=66, rrif_income=25_000, has_spouse=True,
                  drug_plan_exempt_months=tuple(range(1, 13)))
 second = Taxpayer(year=2025, age=67, rrif_income=25_000, has_spouse=True,
                   drug_plan_exempt_months=tuple(range(1, 13)))
-required_couple_questions(first, second)   # {} : revenus du conjoint calculés, couverture confirmée
-couple = compute_couple(first, second, schedule_b_first_share=0.75)
+choices = CoupleOptions(spouse_amount_claimant="neither", federal_transfers=True)
+required_couple_questions(first, second, options=choices)  # {} : admissibilité et couverture confirmées
+couple = compute_couple(first, second, schedule_b_first_share=0.75, options=choices)
 couple.first.forms["TP-1.D.B"]["34"].amount    # 9 951,65625 $, avant arrondi d'affichage
 couple.second.forms["TP-1.D.B"]["34"].amount   # 3 317,21875 $
 couple.refs["first/TP-1.D.B:12"]              # ("second/TP-1:275",)
@@ -72,8 +75,19 @@ admissible de conjoints séparés involontairement; le statut conjugal reste une
 Les `Line.refs` restent locaux à chaque déclaration. `CoupleReturn.refs` ajoute les liens entre
 personnes au format `first/CODE:ligne` et `second/CODE:ligne`, sans inventer de codes de formulaire.
 Un revenu du conjoint déjà saisi est vérifié au cent, puis remplacé par le montant calculé non
-arrondi. Le montant fédéral pour conjoint, les transferts de crédits inutilisés et le fractionnement
-restent à faire : les avertissements des deux déclarations indiquent cette limite du total.
+arrondi. `CoupleOptions` exige de confirmer le demandeur du montant pour conjoint, son
+admissibilité au supplément pour infirmité s'il demande ce montant et l'admissibilité aux
+transferts fédéraux. `None` signifie inconnu : le calcul fournit les questions bloquantes.
+Le statut québécois et le faible revenu ne remplacent pas ces confirmations.
+
+Les parties conjoint de l'annexe 5 alimentent T1:30300 et 30425; l'annexe 2 propre au Québec
+transfère les droits d'âge/pension inutilisés à T1:32600. Les études, le handicap et les autres
+personnes à charge restent à ajouter. Les lignes 413 et 430 du TP-1 conservent les soldes
+négatifs. Le transfert québécois est inscrit à 431, négatif chez le cédant et positif chez le
+bénéficiaire, pour soustraire les crédits reçus à 432. `transfer_unused_quebec=False` permet
+de ne pas le demander. La grille 8 du TP-776.42 recalcule la portion admise à l'IMR.
+Les choix et le partage de B figurent dans `CoupleReturn.to_dict()`.
+Le fractionnement et les crédits restants restent signalés dans les avertissements du total.
 
 Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée du moteur :
 
@@ -81,6 +95,8 @@ Les annexes sont présentes seulement lorsqu'elles s'appliquent dans la portée 
 | --- | --- | --- |
 | `T1`, `TP-1` | Déclarations principales | Toujours |
 | `5000-D1` | Feuille de travail fédérale | Pension admissible, suppléments fédéraux ou récupération AE/PSV; grilles 23500, 25000 et 31400 |
+| `5000-S5` | Montants pour conjoint et personnes à charge | Avec `compute_couple`, montant positif pour conjoint soutenu ou aidant; sections 30300 et 30425 seulement |
+| `5005-S2` | Montants fédéraux transférés du conjoint, version Québec | Avec `compute_couple`, admissibilité confirmée et droits d'âge/pension inutilisés positifs |
 | `5000-S3`, `TP-1.D.G` | Gains en capital | Gain net positif fourni; total et inclusion seulement |
 | `5005-S8` | Cotisations au RRQ | Revenu d'emploi positif, 19 à 72 ans, hypothèse d'année complète |
 | `TP-1.D.U` | Déduction RRQ du salarié | Cotisation bonifiée positive, 19 à 72 ans |

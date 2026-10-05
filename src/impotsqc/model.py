@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from math import isfinite
 from typing import NamedTuple
 
-from .inputs import Benefits, Deductions, PensionIncome, validate_amounts
+from .inputs import Benefits, CoupleOptions, Deductions, PensionIncome, validate_amounts
 
 
 @dataclass(frozen=True)
@@ -214,6 +214,8 @@ class CoupleReturn:
     first: TaxReturn
     second: TaxReturn
     refs: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    options: CoupleOptions | None = None
+    schedule_b_first_share: float = 0.5
 
     @property
     def total_payable(self) -> float:
@@ -225,4 +227,6 @@ class CoupleReturn:
         return {"year": self.first.taxpayer.year,
                 "first": self.first.to_dict(), "second": self.second.to_dict(),
                 "refs": {key: list(values) for key, values in self.refs.items()},
+                "options": asdict(self.options) if self.options is not None else None,
+                "schedule_b_first_share": self.schedule_b_first_share,
                 "summary": {"total_payable": round(self.total_payable, 2)}}

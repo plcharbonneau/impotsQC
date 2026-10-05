@@ -314,7 +314,8 @@ def career_extension(tp: Taxpayer, params: dict, quebec: Form) -> Form | None:
     return f
 
 
-def minimum_tax(tp: Taxpayer, params: dict, quebec: Form, dividend_gross_up: float) -> Form | None:
+def minimum_tax(tp: Taxpayer, params: dict, quebec: Form, dividend_gross_up: float, *,
+                spouse: TaxReturn | None = None) -> Form | None:
     """TP-776.42 : base signée, rajouts des déductions visées et crédits admissibles à l’IMR."""
     t = params["quebec"]["minimum_tax"]
     inclusion = params["federal"]["capital_gains"]["inclusion_rate"]
@@ -372,17 +373,70 @@ def minimum_tax(tp: Taxpayer, params: dict, quebec: Form, dividend_gross_up: flo
     deduction = f.add("254", "Crédits admis aux fins de l'IMR", credits * t["credit_fraction"], "aucun don dans la portée",
                       refs=("TP-776.42:250",),
                       params=("quebec.minimum_tax.credit_fraction",))
-    f.add("258", "Déduction d'impôt minimum de base", deduction, "aucun crédit transféré",
-          refs=("TP-776.42:254",))
+    deduction_refs = ("TP-776.42:254",)
+    if spouse is not None and quebec.amount("431") > 0:
+        transferred = _spouse_minimum_credit(f, params, spouse)
+        deduction += f.add("257.1", "Crédits d'impôt transférés par votre conjoint", transferred,
+                           refs=("TP-776.42:318",) if "318" in f.lines else ("TP-776.42:292",))
+        deduction_refs += ("TP-776.42:257.1",)
+    f.add("258", "Déduction d'impôt minimum de base", deduction, refs=deduction_refs)
     f.add("27", "Déduction d'impôt minimum de base", deduction,
           refs=("TP-776.42:258",))
-    f.add("30", "Impôt minimum après déduction", amt.minimum_amount, "ligne 26 − ligne 27, minimum zéro",
+    minimum_amount = max(0.0, amt.net_adjusted_taxable_income * t["rate"] - deduction)
+    f.add("30", "Impôt minimum après déduction", minimum_amount, "ligne 26 − ligne 27, minimum zéro",
           refs=("TP-776.42:26", "TP-776.42:27"))
-    f.add("32", "Impôt minimum applicable", amt.minimum_amount, "100 % au Québec",
+    f.add("32", "Impôt minimum applicable", minimum_amount, "100 % au Québec",
           refs=("TP-776.42:30",))
-    f.add("34", "Impôt minimum de remplacement", amt.minimum_amount, "aucun crédit pour impôt étranger",
+    f.add("34", "Impôt minimum de remplacement", minimum_amount, "aucun crédit pour impôt étranger",
           refs=("TP-776.42:32",))
     return f
+
+
+def _spouse_minimum_credit(form: Form, params: dict, spouse: TaxReturn) -> float:
+    """Grille 8 du TP-776.42, crédits courants sans dons ni montants d’études dans les entrées.
+
+    Le crédit transféré admis à l’IMR est recalculé depuis les droits du conjoint; il ne suffit
+    pas de prendre la moitié de TP-1:431, notamment en présence de dividendes. Les modules
+    d’études et de dons compléteront les premières attributions B.1/B.2.
+    """
+    q = spouse.quebec
+    credits = form.add("270", "Crédits d'impôt non remboursables du conjoint", q.amount("399"),
+                       "ligne 399 du conjoint; lien dans CoupleReturn.refs")
+    career = form.add("271", "Crédit pour prolongation de carrière du conjoint", q.amount("391"),
+                      "ligne 391 du conjoint; lien dans CoupleReturn.refs")
+    form.add("275", "Total des crédits exclus", career, "aucun crédit habitation, culturel ou nouveau diplômé saisi",
+             refs=("TP-776.42:271",))
+    adjusted = form.add("276", "Crédits après exclusions", credits - career,
+                        refs=("TP-776.42:270", "TP-776.42:275"))
+    tax = form.add("277", "Impôt sur le revenu imposable du conjoint", q.amount("401"),
+                   "ligne 401 du conjoint; lien dans CoupleReturn.refs")
+    form.add("279", "Impôt après redressement", tax, "aucun paiement unique de 1971 ni impôt sur revenu fractionné saisi",
+             refs=("TP-776.42:277",))
+    form.add("280", "Crédit pour prolongation de carrière du conjoint", career, refs=("TP-776.42:271",))
+    other = form.add("287", "Montant de la ligne 425 de la déclaration du conjoint", q.amount("425"),
+                     "lien dans CoupleReturn.refs")
+    form.add("288", "Total des crédits à appliquer avant les crédits transférables", career + other,
+             "aucun report IMR ni crédit étranger ou fiduciaire dans la portée actuelle",
+             refs=("TP-776.42:280", "TP-776.42:287"))
+    used = form.add("289", "Impôt après crédits prioritaires", max(0.0, tax - career - other),
+                    refs=("TP-776.42:279", "TP-776.42:288"))
+    form.add("290", "Montant de la ligne 276", adjusted, refs=("TP-776.42:276",))
+    form.add("291", "Montant de la ligne 289", used, refs=("TP-776.42:289",))
+    unused = form.add("292", "Montant rajusté des crédits transférés par votre conjoint", max(0.0, adjusted - used),
+                      refs=("TP-776.42:290", "TP-776.42:291"))
+    if unused == 0:
+        return 0.0
+    form.add("310", "Montant restant après les première et deuxième attributions", unused,
+             "aucun intérêt étudiant, frais de scolarité ou don saisi", refs=("TP-776.42:292",))
+    form.add("312", "Montant de la troisième attribution", unused, refs=("TP-776.42:310",))
+    rate = form.add("313", "Taux applicable", params["quebec"]["minimum_tax"]["credit_fraction"],
+                    "taux exprimé comme fraction", params=("quebec.minimum_tax.credit_fraction",))
+    amount = form.add("314", "Troisième attribution multipliée par le taux applicable", unused * rate,
+                      refs=("TP-776.42:312", "TP-776.42:313"))
+    form.add("317", "Montant de la ligne 314", amount, refs=("TP-776.42:314",))
+    form.add("318", "Crédits d'impôt transférés par votre conjoint", amount,
+             "première et deuxième attributions nulles dans la portée actuelle", refs=("TP-776.42:317",))
+    return amount
 
 
 def schedule_e(params: dict, quebec: Form, minimum: Form) -> Form:
@@ -390,8 +444,13 @@ def schedule_e(params: dict, quebec: Form, minimum: Form) -> Form:
     f = Form.from_parameters("TP-1.D.E", params)
     ordinary = f.add("10", "Montant de la ligne 430 de votre déclaration", quebec.amount("430"),
                      refs=("TP-1:430",))
-    f.add("12", "Impôt après crédits transférés", max(0.0, ordinary), "sans conjoint",
-          refs=("TP-1.D.E:10",))
+    refs = ("TP-1.D.E:10",)
+    if "431" in quebec.lines:
+        ordinary -= f.add("11", "Crédits transférés d'un conjoint à l'autre", quebec.amount("431"),
+                          refs=("TP-1:431",))
+        refs += ("TP-1.D.E:11",)
+    f.add("12", "Impôt après crédits transférés", max(0.0, ordinary), "ligne 10 moins ligne 11, minimum zéro",
+          refs=refs)
     f.add("14", "Impôt après report de l'IMR", max(0.0, ordinary), "report non modélisé",
           refs=("TP-1.D.E:12",))
     amt = f.add("15", "Impôt minimum de remplacement", minimum.amount("34"),

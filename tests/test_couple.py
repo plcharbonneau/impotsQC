@@ -7,12 +7,25 @@ import json
 
 import pytest
 
-from impotsqc import (Form, MissingInformationError, Taxpayer, compute, compute_couple,
-                      required_couple_questions)
+from impotsqc import (CoupleOptions, Form, MissingInformationError, Taxpayer, compute,
+                      compute_couple as full_couple, required_couple_questions as full_questions)
 from test_formulaires import (test_metadonnees_et_alias as check_metadata,
                               test_references_et_parametres_resolvent as check_local_refs,
                               test_json_correspond_aux_objets as check_json,
                               test_reports_des_annexes as check_annexes)
+
+
+_NO_TRANSFERS = CoupleOptions(spouse_amount_claimant="neither", federal_transfers=False, transfer_unused_quebec=False)
+
+
+def compute_couple(first, second, **kwargs):
+    """Isole le partage de B avec les autres choix de crédits explicitement désactivés."""
+    return full_couple(first, second, options=_NO_TRANSFERS, **kwargs)
+
+
+def required_couple_questions(first, second):
+    """Vérifie les questions du ménage avec les choix de transferts déjà connus."""
+    return full_questions(first, second, options=_NO_TRANSFERS)
 
 
 def person(**values):

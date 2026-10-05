@@ -104,3 +104,11 @@ rate = 0.30
 source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t4e/t4e-26b.pdf"
 ref = "Tableau de remboursement du T4E 2026 : 30 % du moindre du revenu net excédentaire et des prestations régulières (case 15 moins case 30); exemption selon case 7"
 status = "published"
+
+[caregiver]
+spouse_supplement = 2740
+maximum = 8773
+net_income_ceiling = 29374
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/td1/td1-26f.pdf"
+ref = "TD1 2026, lignes 7 à 10 : supplément de 2 740 $, maximum de 8 773 $, plafond de 29 374 $"
+status = "published"

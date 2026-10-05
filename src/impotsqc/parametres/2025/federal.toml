@@ -96,3 +96,11 @@ rate = 0.30
 source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t4e/t4e-25b.pdf"
 ref = "Tableau de remboursement du T4E 2025 : 30 % du moindre du revenu net excédentaire et des prestations régulières (case 15 moins case 30); exemption selon case 7"
 status = "published"
+
+[caregiver]
+spouse_supplement = 2687
+maximum = 8601
+net_income_ceiling = 28798
+source = "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s5/5000-s5-25f.pdf"
+ref = "Annexe 5, sections 30300 et 30425 : supplément, maximum et plafond du revenu net"
+status = "published"

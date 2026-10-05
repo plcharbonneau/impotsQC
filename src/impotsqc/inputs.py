@@ -103,3 +103,33 @@ class Deductions:
     def __post_init__(self) -> None:
         """Vérifie que les cotisations sont des montants finis et non négatifs."""
         validate_amounts(self)
+
+
+@dataclass(frozen=True)
+class CoupleOptions:
+    """Admissibilité et choix de crédits entre les deux déclarants d’un couple.
+
+    `spouse_amount_claimant` vaut first, second ou neither; il confirme la personne qui
+    subvient aux besoins de son conjoint et demande le montant fédéral correspondant.
+    `spouse_caregiver` confirme l’admissibilité de ce demandeur au supplément pour infirmité.
+    `federal_transfers` confirme les conditions de transfert de l’annexe 2, notamment l’absence
+    de séparation pour rupture de 90 jours incluant le 31 décembre. None signifie inconnu.
+    """
+
+    spouse_amount_claimant: str | None = None
+    spouse_caregiver: bool | None = None
+    federal_transfers: bool | None = None
+    transfer_unused_quebec: bool = True
+
+    def __post_init__(self) -> None:
+        """Valide les réponses sans assimiler une absence de réponse à une inadmissibilité."""
+        if self.spouse_amount_claimant not in (None, "first", "second", "neither"):
+            raise ValueError("spouse_amount_claimant doit être first, second, neither ou None")
+        for name in ("spouse_caregiver", "federal_transfers"):
+            value = getattr(self, name)
+            if value is not None and type(value) is not bool:
+                raise ValueError(f"{name} doit être True, False ou None")
+        if type(self.transfer_unused_quebec) is not bool:
+            raise ValueError("transfer_unused_quebec doit être True ou False")
+        if self.spouse_amount_claimant == "neither" and self.spouse_caregiver:
+            raise ValueError("un demandeur doit être choisi pour le montant canadien pour aidant du conjoint")

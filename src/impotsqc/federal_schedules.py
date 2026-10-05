@@ -262,3 +262,72 @@ def worksheet(tp: Taxpayer, params: dict, federal: Form, eligible_annuity: float
         f.add("31400-8", "Ligne 6 plus ligne 7", pension,
               refs=("5000-D1:31400-6", "5000-D1:31400-7"))
     return f
+
+
+def spouse_amount(params: dict, federal: Form, spouse: Form, *, caregiver: bool) -> Form | None:
+    """Annexe 5, sections 30300 et 30425 : conjoint soutenu et infirmité confirmée."""
+    table = params["federal"]["caregiver"]
+    base, net = federal.amount("30000"), spouse.amount("23600")
+    addition = table["spouse_supplement"] if caregiver else 0.0
+    amount = max(0.0, base + addition - net)
+    extra = max(0.0, min(table["maximum"], table["net_income_ceiling"] - net) - amount) if caregiver else 0.0
+    if amount == 0 and extra == 0:
+        return None
+    f = Form.from_parameters("5000-S5", params)
+    f.add("30300-1", "Montant personnel de base", base, refs=("T1:30000",))
+    f.add("51090", "Montant canadien pour aidant naturel pour votre époux ou conjoint de fait", addition,
+          "admissibilité confirmée par le demandeur", params=("federal.caregiver.spouse_supplement",))
+    f.add("30300-3", "Ligne 1 plus ligne 2", base + addition, refs=("5000-S5:30300-1", "5000-S5:51090"))
+    f.add("30300-4", "Revenu net de votre époux ou conjoint de fait", net,
+          "ligne 23600 du conjoint, revenu annuel; lien dans CoupleReturn.refs")
+    f.add("30300-5", "Montant pour époux ou conjoint de fait", amount, "ligne 3 moins ligne 4, minimum zéro",
+          refs=("5000-S5:30300-3", "5000-S5:30300-4"))
+    if caregiver:
+        f.add("30425-1", "Montant de base", table["net_income_ceiling"], params=("federal.caregiver.net_income_ceiling",))
+        f.add("30425-2", "Revenu net de cette personne", net, refs=("5000-S5:30300-4",))
+        f.add("30425-3", "Ligne 1 moins ligne 2", max(0.0, min(table["maximum"], table["net_income_ceiling"] - net)),
+              "minimum zéro, maximum annuel", refs=("5000-S5:30425-1", "5000-S5:30425-2"),
+              params=("federal.caregiver.maximum",))
+        f.add("30425-4", "Montant demandé à la ligne 30300", amount, refs=("5000-S5:30300-5",))
+        f.add("30425-5", "Montant canadien pour aidant naturel pour époux ou conjoint de fait", extra,
+              "ligne 3 moins ligne 4, minimum zéro", refs=("5000-S5:30425-3", "5000-S5:30425-4"))
+    return f
+
+
+def spouse_transfer(params: dict, spouse: Form) -> Form | None:
+    """Annexe 2 propre au Québec : droits inutilisés d’âge et de pension transférables.
+
+    Les lignes de handicap et d’études seront raccordées avec ces modules; aucun montant
+    n’est présumé en leur absence. Le revenu imposable est converti avec l’impôt du barème
+    au-delà du premier palier, conformément à la ligne 7.
+    """
+    fed = params["federal"]
+    age = spouse.amount("30100")
+    pension = min(fed["pension_amount"]["maximum"], spouse.amount("31400"))
+    taxable = spouse.amount("26000")
+    scaled = taxable if taxable <= fed["brackets"]["thresholds"][0] else spouse.amount("40400") / fed["credits"]["rate"]
+    own = spouse.amount("30000") + spouse.amount("100")
+    used = max(0.0, scaled - own)
+    amount = max(0.0, age + pension - used)
+    if amount == 0:
+        return None
+    f = Form.from_parameters("5005-S2", params)
+    f.add("35200", "Montant en raison de l'âge", age, "ligne 30100 du conjoint; lien dans CoupleReturn.refs")
+    f.add("35500", "Montant pour revenu de pension", pension, "ligne 31400 du conjoint; lien dans CoupleReturn.refs",
+          params=("federal.pension_amount.maximum",))
+    f.add("6", "Total des montants transférables", age + pension, "droits d’âge et de pension actuellement saisis",
+          refs=("5005-S2:35200", "5005-S2:35500"))
+    f.add("7", "Revenu imposable servant au calcul", scaled,
+          "ligne 26000 du conjoint, ou impôt de la ligne 77 divisé par le taux des crédits au-delà du premier palier",
+          params=("federal.brackets.thresholds", "federal.credits.rate"))
+    f.add("8", "Montant personnel de base du conjoint", spouse.amount("30000"),
+          "ligne 30000 du conjoint; lien dans CoupleReturn.refs")
+    f.add("9", "Montant de la ligne 100 de la déclaration du conjoint", spouse.amount("100"),
+          "lien dans CoupleReturn.refs")
+    f.add("11", "Total des lignes 8 à 10", own, "aucun montant de scolarité saisi dans la portée actuelle",
+          refs=("5005-S2:8", "5005-S2:9"))
+    f.add("36100", "Revenu imposable rajusté du conjoint", used, "ligne 7 moins ligne 11, minimum zéro",
+          refs=("5005-S2:7", "5005-S2:11"))
+    f.add("13", "Montants fédéraux transférés de votre époux ou conjoint de fait", amount,
+          "ligne 6 moins ligne 12, minimum zéro", refs=("5005-S2:6", "5005-S2:36100"))
+    return f

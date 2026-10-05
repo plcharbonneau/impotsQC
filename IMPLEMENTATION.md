@@ -28,7 +28,7 @@ aux autres provinces ne sont pas à réintroduire pour 2025/2026.
 | D03 | CELIAPP : annexe 15, droits, cotisations, transferts et retraits | À implémenter |
 | D04 | Intérêts/frais financiers, annexe N, rajustements et reports | À implémenter |
 | Q01 | Questionnaire familial : dates/statuts, vivre seul, personnes à charge et garde partagée | À implémenter |
-| Q02 | Deux déclarations coordonnées; crédits conjoint/personnes à charge, annexes 2/5/A | Revenus et RAMQ coordonnés avec compute_couple; crédits et transferts 2/5/A à implémenter |
+| Q02 | Deux déclarations coordonnées; crédits conjoint/personnes à charge, annexes 2/5/A | Revenus/RAMQ, S5 conjoint, S2 âge/pension et TP-1:431 implémentés; autres personnes à charge, études, handicap et annexe A à compléter |
 | Q03 | Annexe B : droits du conjoint, répartition, supplément monoparental | Droits des deux conjoints et partage implémentés; supplément monoparental et admissibilité détaillée à compléter |
 | Q04 | T1032 et annexe Q : fractionnement, revenus admissibles, choix distincts par régime | À implémenter |
 | Q05 | Annexe K : détermination des exemptions mensuelles et paiement de la prime du conjoint | À implémenter |
@@ -40,7 +40,7 @@ aux autres provinces ne sont pas à réintroduire pour 2025/2026.
 | F03 | Dons : annexes 9/V, reports et interactions IMR | À implémenter |
 | F04 | Études : annexes 11/M/S/T, intérêts, formation, transferts et reports | À implémenter |
 | F05 | Handicap, transferts et produits/services de soutien; admissibilité attestée | À implémenter |
-| F06 | Aidants : crédit canadien et annexe H | À implémenter |
+| F06 | Aidants : crédit canadien et annexe H | Conjoint soutenu fédéral 30300/30425 implémenté; autres personnes à charge et annexe H à faire |
 | F07 | Maintien à domicile : annexe J; frais d'autonomie de l'annexe B | À implémenter |
 | F08 | Activités sportives/artistiques/culturelles des enfants au Québec | À implémenter |
 | F09 | Achat d'habitation fédéral et TP-752.HA | À implémenter |
@@ -54,7 +54,7 @@ aux autres provinces ne sont pas à réintroduire pour 2025/2026.
 | B03 | Bouclier fiscal : TP-1029.BF, hausse de revenus et perte de transferts | À implémenter pour 2025; aboli dès 2026 |
 | I01 | Dispositions détaillées (annexes 3/G), PBR, dépenses, provisions, pertes et reports | À implémenter |
 | I02 | Revenus étrangers, conversions et crédits T2209 / TP-772 | À implémenter |
-| I03 | IMR : bases négatives et ajouts exacts, reports sur sept ans T691 / TP-776.42 / E | Bases signées et rajouts des déductions présentes corrigés; reports et interactions des futurs crédits à faire |
+| I03 | IMR : bases négatives et ajouts exacts, reports sur sept ans T691 / TP-776.42 / E | Bases signées, rajouts et transferts québécois (grille 8) implémentés dans la portée présente; reports et interactions des futurs crédits à faire |
 | E01 | Location : T776 / TP-128, dépenses, quote-parts et amortissement | À implémenter |
 | E02 | Entreprises : T2125 / TP-80 / L, dépenses, amortissement, cotisations autonome | À implémenter |
 | E03 | Dépenses d'emploi : T777 / TP-59, conditions et remboursements | À implémenter |
@@ -163,10 +163,28 @@ Les priorités ordonnent la réalisation et ne retranchent aucun élément du re
 - B : montants communs des deux personnes, une seule réduction familiale, partage explicite
   (50 % par défaut); RAMQ : revenus automatiquement croisés, chaque personne paie sa prime.
 - Références interpersonnelles dans `CoupleReturn.refs`; références locales inchangées.
-- Cette étape ne clôt pas Q02/Q03 : les annexes fédérales 2/5, l'annexe A, les crédits inutilisés
-  au TP-1:431, le supplément monoparental et le fractionnement restent à calculer.
+- Cette étape ne clôt pas Q02/Q03. Le lot suivant ajoute les parties conjoint des annexes 2/5
+  et TP-1:431; l'annexe A, le supplément monoparental et le fractionnement restent à calculer.
 - 469 tests réussis (dont 31 nouveaux cas de couples); sans données locales, 367 réussis et
   22 sautés. 600 profils historiques, 128 124 montants et tous les totaux
   de `compute` strictement identiques au commit 91050c9. Aucun paramètre numérique changé.
 - Performance du calcul individuel : salarié 36,833 → 37,918 µs (1,029×). La cible historique
   reste ouverte; protocole et cinq profils dans PLAN.md.
+
+
+## Étape crédits et transferts entre conjoints
+
+- `CoupleOptions` et questions bloquantes : demandeur du montant pour conjoint, supplément
+  pour infirmité et conditions de transfert fédéral; aucune admissibilité déduite du revenu.
+- 5000-S5 : sections 30300/30425 du conjoint soutenu. 5005-S2 : droits d'âge et de pension
+  inutilisés, utilisation préalable des crédits propres du conjoint. Les autres sections,
+  études et handicap sont encore dans F04/F05/F06 et Q02.
+- TP-1 : soldes négatifs conservés à 413/430, transfert à 431; annexe E et grille 8 du
+  TP-776.42 pour l'IMR. Les attributions d'études/dons et reports restent dans I03.
+- 497 tests passent; sans données locales : 395 passent et 22 sont sautés. Comparaison de
+  600 profils avec adb1d3c : tous les totaux inchangés, 128 124 lignes comparées, huit soldes
+  intermédiaires changés (413/430) conformément au formulaire; 202 entrées numériques
+  préexistantes des TOML strictement conservées.
+- Mesure avant/après dans PLAN.md; la contrainte historique de performance reste ouverte.
+- Q02 n'est pas clos. Prochaines étapes : questionnaire familial, fractionnement T1032/Q,
+  puis frais/crédits familiaux, selon le registre intégral.

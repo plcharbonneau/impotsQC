@@ -17,7 +17,14 @@ from .rules import QppContributions
 
 def federal_return(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: dict[str, Form]) -> Form:
     """Remplit le T1 de `tp` avec les paramètres de l'année et ses cotisations RRQ."""
-    fed, cot = params["federal"], params["cotisations"]
+    federal_income(tp, params, qpp, forms=forms)
+    federal_personal_credits(tp, params, qpp, forms=forms)
+    return federal_tax(tp, params, forms=forms)
+
+
+def federal_income(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: dict[str, Form]) -> Form:
+    """Remplit les revenus et déductions du T1 avant toute attribution de crédits familiaux."""
+    fed = params["federal"]
     f = Form.from_parameters("T1", params)
     forms[f.code] = f
 
@@ -139,57 +146,88 @@ def federal_return(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
         taxable_refs += ("T1:25000",)
     taxable = f.add("26000", "Revenu imposable", max(0.0, net - other_deduction), refs=taxable_refs)
 
+    return f
+
+
+def federal_personal_credits(tp: Taxpayer, params: dict, qpp: QppContributions, *,
+                             forms: dict[str, Form], coordinated: bool = False) -> Form:
+    """Remplit les droits personnels nécessaires avant les transferts entre conjoints."""
+    fed, cot = params["federal"], params["cotisations"]
+    f = forms["T1"]
+    net = f.amount("23600")
+    annex_8 = forms.get("5005-S8")
+    worksheet = forms.get("5000-D1")
+    pension = worksheet.amount("31400-8") if worksheet is not None else 0.0
     # Étape 5, partie B — Crédits d'impôt non remboursables
-    amounts = [
-        f.add("30000", "Montant personnel de base", rules.federal_basic_personal_amount(net, fed["basic_personal_amount"]),
-              "bonification réduite linéairement entre les 4e et 5e paliers, selon la ligne 23600",
-              refs=("T1:23600",),
-              params=(
-                  "federal.basic_personal_amount.maximum",
-                  "federal.basic_personal_amount.minimum",
-                  "federal.basic_personal_amount.phase_out_start",
-                  "federal.basic_personal_amount.phase_out_end",
-              )),
-        f.add("30100", "Montant en raison de l'âge", rules.federal_age_amount(tp.age, net, fed["age_amount"]),
-              "65 ans et plus, moins 15 % de la ligne 23600 au-delà du seuil",
-              refs=("T1:23600",),
-              params=(
-                  "federal.age_amount.amount",
-                  "federal.age_amount.threshold",
-                  "federal.age_amount.reduction_rate",
-                  "federal.age_amount.minimum_age",
-              )),
-        f.add("30800", "Cotisations de base au RPC ou au RRQ pour les revenus d'emploi",
-              annex_8.amount("P2-35") if annex_8 is not None else qpp.base,
-              "annexe 8, partie 2, ligne 35 si applicable",
-              refs=("5005-S8:P2-35",) if annex_8 is not None else (),
-              params=(
-                  "cotisations.qpp.basic_exemption",
-                  "cotisations.qpp.maximum_pensionable_earnings",
-                  "cotisations.qpp.base_rate",
-              )),
-        f.add("31200", "Cotisations de l'employé à l'assurance-emploi",
-              rules.insurable_premium(tp.employment_income, cot["employment_insurance"]), "taux du Québec",
-              refs=("T1:10100",),
-              params=(
-                  "cotisations.employment_insurance.maximum_insurable_earnings",
-                  "cotisations.employment_insurance.rate",
-              )),
-        f.add("31205", "Cotisations au régime provincial d'assurance parentale (RPAP)",
-              rules.insurable_premium(tp.employment_income, cot["qpip"]),
-              refs=("T1:10100",),
-              params=("cotisations.qpip.maximum_insurable_earnings", "cotisations.qpip.rate")),
-        f.add("31260", "Montant canadien pour emploi",
-              min(fed["canada_employment_amount"]["maximum"], tp.employment_income),
-              refs=("T1:10100",),
-              params=("federal.canada_employment_amount.maximum",)),
-        f.add("31400", "Montant pour revenu de pension", min(fed["pension_amount"]["maximum"], pension_income + eligible_annuity),
-              "grille 31400; PSV, RRQ et retraits ordinaires REER exclus",
-              refs=("5000-D1:31400-8",) if pension_income + eligible_annuity else ("T1:11500",),
-              params=("federal.pension_amount.maximum",)),
-    ]
-    total_amounts = f.add("33500", "Total des montants", sum(amounts),
-                          refs=("T1:30000", "T1:30100", "T1:30800", "T1:31200", "T1:31205", "T1:31260", "T1:31400"))
+    f.add("30000", "Montant personnel de base", rules.federal_basic_personal_amount(net, fed["basic_personal_amount"]),
+          "bonification réduite linéairement entre les 4e et 5e paliers, selon la ligne 23600",
+          refs=("T1:23600",),
+          params=(
+              "federal.basic_personal_amount.maximum",
+              "federal.basic_personal_amount.minimum",
+              "federal.basic_personal_amount.phase_out_start",
+              "federal.basic_personal_amount.phase_out_end",
+          ))
+    f.add("30100", "Montant en raison de l'âge", rules.federal_age_amount(tp.age, net, fed["age_amount"]),
+          "65 ans et plus, moins 15 % de la ligne 23600 au-delà du seuil",
+          refs=("T1:23600",),
+          params=(
+              "federal.age_amount.amount",
+              "federal.age_amount.threshold",
+              "federal.age_amount.reduction_rate",
+              "federal.age_amount.minimum_age",
+          ))
+    f.add("30800", "Cotisations de base au RPC ou au RRQ pour les revenus d'emploi",
+          annex_8.amount("P2-35") if annex_8 is not None else qpp.base,
+          "annexe 8, partie 2, ligne 35 si applicable",
+          refs=("5005-S8:P2-35",) if annex_8 is not None else (),
+          params=(
+              "cotisations.qpp.basic_exemption",
+              "cotisations.qpp.maximum_pensionable_earnings",
+              "cotisations.qpp.base_rate",
+          ))
+    f.add("31200", "Cotisations de l'employé à l'assurance-emploi",
+          rules.insurable_premium(tp.employment_income, cot["employment_insurance"]), "taux du Québec",
+          refs=("T1:10100",),
+          params=(
+              "cotisations.employment_insurance.maximum_insurable_earnings",
+              "cotisations.employment_insurance.rate",
+          ))
+    f.add("31205", "Cotisations au régime provincial d'assurance parentale (RPAP)",
+          rules.insurable_premium(tp.employment_income, cot["qpip"]),
+          refs=("T1:10100",),
+          params=("cotisations.qpip.maximum_insurable_earnings", "cotisations.qpip.rate"))
+    f.add("31260", "Montant canadien pour emploi",
+          min(fed["canada_employment_amount"]["maximum"], tp.employment_income),
+          refs=("T1:10100",),
+          params=("federal.canada_employment_amount.maximum",))
+    f.add("31400", "Montant pour revenu de pension", min(fed["pension_amount"]["maximum"], pension),
+          "grille 31400; PSV, RRQ et retraits ordinaires REER exclus",
+          refs=("5000-D1:31400-8",) if pension else ("T1:11500",),
+          params=("federal.pension_amount.maximum",))
+    if coordinated:
+        codes = ("30800", "31200", "31205", "31260")
+        f.add("100", "Total des lignes 87 à 99", sum(f.amount(n) for n in codes),
+              refs=tuple(f"T1:{n}" for n in codes))
+    f.add("40400", "Impôt fédéral sur le revenu imposable", rules.bracket_tax(f.amount("26000"), fed["brackets"]),
+          "partie A, ligne 77; aucun impôt sur le revenu fractionné", refs=("T1:26000",),
+          params=("federal.brackets.thresholds", "federal.brackets.rates"))
+    return f
+
+
+def federal_tax(tp: Taxpayer, params: dict, *, forms: dict[str, Form]) -> Form:
+    """Applique les crédits personnels et transférés, puis l’impôt minimum et l’abattement."""
+    fed = params["federal"]
+    f = forms["T1"]
+    eligible, other = rules.grossed_up_dividends(tp.eligible_dividends, tp.other_dividends, fed["dividends"])
+    repayment = f.amount("23500")
+    codes = ("30000", "30100", "30800", "31200", "31205", "31260", "31400")
+    refs = ("T1:30000", "T1:30100", "T1:30800", "T1:31200", "T1:31205", "T1:31260", "T1:31400")
+    for number in ("30300", "30425", "32600"):
+        if number in f.lines:
+            codes += (number,)
+            refs += (f"T1:{number}",)
+    total_amounts = f.add("33500", "Total des montants", sum(f.lines[n].amount for n in codes), refs=refs)
     credits = f.add("33800", "Montants multipliés par le taux du crédit", total_amounts * fed["credits"]["rate"],
                     refs=("T1:33500",),
                     params=("federal.credits.rate",))
@@ -203,10 +241,7 @@ def federal_return(tp: Taxpayer, params: dict, qpp: QppContributions, *, forms: 
                     refs=("T1:33800", "T1:34990"))
 
     # Étape 5, parties A et C — Impôt fédéral net
-    tax = f.add("40400", "Impôt fédéral sur le revenu imposable", rules.bracket_tax(taxable, fed["brackets"]),
-                "partie A, barème de l'année; aucun impôt sur le revenu fractionné",
-                refs=("T1:26000",),
-                params=("federal.brackets.thresholds", "federal.brackets.rates"))
+    tax = f.amount("40400")
     dividend_credit = f.add("40425", "Crédit d'impôt fédéral pour dividendes",
                             sum(rules.dividend_tax_credit(eligible, other, fed["dividends"])),
                             "pourcentage du montant majoré, déterminés et autres",

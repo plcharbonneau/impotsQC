@@ -21,13 +21,16 @@ from __future__ import annotations
 from . import rules
 from .child_support import ChildSupportCase, ChildSupportResult, ParentIncome, compute_child_support
 from .federal import federal_return
-from .model import Form, Line, Taxpayer, TaxReturn
+from .model import CoupleReturn, Form, Line, Taxpayer, TaxReturn
+from .couple import compute_couple, required_couple_questions
+from .inputs import Benefits, CoupleOptions, Deductions, PensionIncome, PensionSplit, TaxPayments
 from .parameters import PROVISIONAL_STATUSES, load_parameters
+from .payments import settle_tax_payments
 from .quebec import quebec_return
 from .questions import MissingInformationError, required_questions
 
-__version__ = "0.5.0"
-__all__ = ["ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
+__version__ = "0.6.0"
+__all__ = ["PensionSplit", "TaxPayments", "CoupleOptions", "CoupleReturn", "compute_couple", "required_couple_questions", "Benefits", "Deductions", "PensionIncome", "ChildSupportCase", "ChildSupportResult", "Form", "Line", "ParentIncome", "Taxpayer", "TaxReturn",
            "MissingInformationError", "required_questions", "compute", "compute_child_support", "load_parameters"]
 
 _PARAMS: dict[int, dict] = {}
@@ -50,16 +53,23 @@ def compute(taxpayer: Taxpayer) -> TaxReturn:
     forms: dict[str, Form] = {}
     federal = federal_return(taxpayer, params, qpp, forms=forms)
     quebec_return(taxpayer, params, qpp, oas_repayment=federal.amount("23500"), forms=forms)
+    if taxpayer.payments is not None:
+        settle_tax_payments(taxpayer, forms)
     return TaxReturn(taxpayer, forms, _warnings(taxpayer, params, forms))
 
 
-def _warnings(tp: Taxpayer, params: dict, forms: dict[str, Form]) -> tuple[str, ...]:
+def _warnings(tp: Taxpayer, params: dict, forms: dict[str, Form], *, coordinated: bool = False) -> tuple[str, ...]:
     """Avertissements qui touchent CE contribuable : paramètres provisoires, règles dérivées, reports."""
     quebec = forms["TP-1"]
     out = []
     if params["quebec"]["drug_insurance"]["status"] in PROVISIONAL_STATUSES and len(tp.drug_plan_exempt_months) < 12:
         out.append(f"Ligne 447 (annexe K) : paramètres {tp.year} provisoires, non encore publiés.")
-    if tp.has_spouse:
+    if coordinated:
+        out.append("Couple : revenus, annexe B et crédits fédéraux des annexes 2/5 coordonnés. "
+                   "Les crédits pour autres personnes à charge, études et handicap ainsi que le "
+                   "fractionnement des pensions particulières restent à compléter; le total reste incomplet. "
+                   "Chaque conjoint paie sa propre cotisation RAMQ. Le partage de B n'est pas optimisé.")
+    elif tp.has_spouse:
         out.append("Couple : la RAMQ utilise le revenu familial et le barème avec conjoint, "
                    "mais chacun paie sa propre cotisation. Les crédits et transferts entre conjoints "
                    "et le fractionnement de pension ne sont pas calculés. L'annexe B retient "
@@ -74,7 +84,7 @@ def _warnings(tp: Taxpayer, params: dict, forms: dict[str, Form]) -> tuple[str, 
         extra = forms["T691"].amount("P5-11")
         out.append(f"Impôt minimum fédéral : {extra:,.0f} $ d'impôt additionnel, reportable sur sept ans "
                    "(report non modélisé).")
-    if "TP-1.D.E" in forms and forms["TP-1.D.E"].amount("15") > max(0.0, quebec.amount("430")):
-        out.append("Impôt minimum du Québec : portée de calcul héritée du moteur 0.2; "
+    if "TP-1.D.E" in forms and forms["TP-1.D.E"].amount("15") > forms["TP-1.D.E"].amount("14"):
+        out.append("Impôt minimum du Québec : impôt additionnel; "
                    "report sur sept ans non modélisé.")
     return tuple(out)

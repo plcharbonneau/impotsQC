@@ -52,11 +52,14 @@ class ParentIncome:
     @classmethod
     def from_tax_return(cls, tax_return, *, union_dues: float = 0.0, professional_dues: float = 0.0) -> "ParentIncome":
         """Revenus tirés d'une déclaration `impotsqc` (TP-1) : emploi (101) → 200; PSV, RRQ, pensions,
-        REER et FERR (114, 119, 122) → 205; dividendes imposables et intérêts (128, 130) → 206; gains
-        en capital imposables (139) → 208."""
+        REER et FERR (114, 119, 122 et retrait REER de 154) → 205; dividendes imposables et intérêts (128, 130) → 206; gains
+        en capital imposables (139) → 208. AE/RQAP (110, 111) → 203; indemnités et suppléments
+        fédéraux (148) → 205. L'aide sociale (147) est exclue, conformément au formulaire."""
         q = tax_return.quebec
         return cls(salary=q.amount("101"),
-                   pension_benefits=q.amount("114") + q.amount("119") + q.amount("122"),
+                   ei_qpip_benefits=q.amount("110") + q.amount("111"),
+                   pension_benefits=q.amount("114") + q.amount("119") + q.amount("122")
+                                    + tax_return.taxpayer.rrsp_income + q.amount("148"),
                    investment_income=q.amount("128") + q.amount("130"),
                    other_income=q.amount("139"),
                    union_dues=union_dues, professional_dues=professional_dues)

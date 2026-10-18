@@ -9,7 +9,7 @@ vérifie à leur valeur exacte :
 - `ramq_maximum` : maximum de la cotisation au régime d'assurance médicaments retenu par l'oracle
   quand il diffère du maximum officiel de l'année;
 - `annexe_b_sans_retraits_reer` : l'oracle exclut les retraits REER des revenus de retraite de
-  l'annexe B, que le formulaire officiel inclut (ligne 122);
+  l'annexe B : ancien écart du moteur, corrigé en 0.6 (TP-1, ligne 154 point 6);
 - `imr_quebec_non_calcule` : l'oracle n'estime l'impôt minimum qu'au fédéral; quand l'impôt minimum
   du Québec s'applique, il rapporte l'impôt ordinaire du Québec.
 
@@ -88,11 +88,8 @@ def ecarts_attendus(year: int, entree: dict, sortie: dict, r) -> dict[str, float
         sans_reer = rules.schedule_b_amount(age=entree["age"], lives_alone=entree.get("seul", False),
                                             retirement_income=entree.get("revenu_pension", 0),
                                             family_income=r.quebec.amount("275"), table=qc["schedule_b"])
-        assert abs(sans_reer - sortie["montant_age_seul_retraite_qc"]) <= 1  # l'oracle = règle sans REER
-        delta_361 = r.quebec.amount("361") - sans_reer
-        attendus["montant_age_seul_retraite_qc"] = delta_361
-        impot_qc = -qc["credits"]["rate"] * delta_361
-        attendus["impot_qc"] = impot_qc
+        assert abs(sans_reer - sortie["montant_age_seul_retraite_qc"]) <= 1
+        assert r.quebec.amount("361") == sans_reer  # plus aucune tolérance pour l'ancien bogue
     if connus.get("imr_quebec_non_calcule"):
         impot_qc += r.quebec.amount("432") - max(0.0, r.quebec.amount("430"))
         attendus["impot_qc"] = impot_qc
@@ -124,13 +121,20 @@ def test_ligne_par_ligne(year, cas):
 
 
 @pytest.mark.parametrize("year", ANNEES)
-def test_ecarts_declares_existent_vraiment(year):
-    """Les écarts déclarés ne sont pas nuls : si l'oracle se corrige, le test le dira."""
+def test_ecarts_historiques_reer_resolus_et_ramq_expliques(year):
+    """L’ancien écart REER a disparu; seuls les écarts RAMQ documentés sont maintenus."""
     connus = DOCS[year].get("ecarts_connus", {})
     reer = [c for c in DOCS[year]["cas"] if c["entree"].get("retrait_reer")]
-    deltas = [ecarts_attendus(year, c["entree"], c["sortie"], compute(contribuable(year, c["entree"])))
-              .get("montant_age_seul_retraite_qc", 0.0) for c in reer]
-    assert sum(1 for d in deltas if d > 1) == connus.get("nombre_cas_reer", 0)
+    historical_count = 0
+    for case in reer:
+        entry, output = case["entree"], case["sortie"]
+        result = compute(contribuable(year, entry))
+        assert abs(result.quebec.amount("361") - output["montant_age_seul_retraite_qc"]) <= 1
+        historical = rules.schedule_b_amount(age=entry["age"], lives_alone=entry.get("seul", False),
+            retirement_income=entry.get("revenu_pension", 0) + entry["retrait_reer"],
+            family_income=result.quebec.amount("275"), table=QC[year]["schedule_b"])
+        historical_count += historical - result.quebec.amount("361") > 1
+    assert historical_count == connus.get("nombre_cas_reer", 0)
     ramq = connus.get("ramq_maximum")
     assert sum(1 for c in DOCS[year]["cas"] if ramq is not None and c["sortie"]["prime_ramq"] == ramq) \
         == connus.get("nombre_cas_ramq", 0)

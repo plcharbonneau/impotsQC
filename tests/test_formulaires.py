@@ -11,10 +11,19 @@ import pytest
 
 from profiles import single_public_taxpayer
 
-from impotsqc import ChildSupportCase, Line, ParentIncome, compute, compute_child_support
+from impotsqc import (Benefits, Deductions, PensionIncome, ChildSupportCase, Line, ParentIncome,
+                      compute, compute_child_support)
 from impotsqc.parameters import FORM_CODES, ParameterError, _check_forms, load_parameters
 
 PROFILES = [
+    {"age": 55, "pensions": (PensionIncome(30_000, "rpp"), PensionIncome(5_000, "rrsp_annuity", True))},
+    {"age": 66, "interest_income": 150_000, "oas_pension": 8_000,
+     "benefits": Benefits(federal_supplements=3_000, ei_regular=10_000, ei_repayment_exempt=False)},
+    {"age": 55, "interest_income": 50_000,
+     "benefits": Benefits(workers_compensation=30_000, quebec_replacement_adjustment=15_000,
+                          social_assistance=5_000, quebec_social_assistance=4_000, ei_repaid=1_000)},
+    {"age": 55, "employment_income": 30_000, "capital_gains": 600_000,
+     "deductions": Deductions(rpp=5_000, union_dues_federal=1_150, union_dues_quebec=1_000)},
     {"age": 40},
     {"age": 40, "employment_income": 80_000},
     {"age": 66, "rrif_income": 30_000, "oas_pension": 9_000, "qpp_benefits": 12_000},

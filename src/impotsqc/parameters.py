@@ -16,7 +16,7 @@ from importlib.resources import files
 
 FILES = ("federal", "quebec", "cotisations", "pension_alimentaire", "formulaires")
 FORM_CODES = frozenset({"T1", "T691", "TP-1", "TP-1.D.B", "TP-1.D.E", "TP-1.D.F", "TP-1.D.K",
-                        "TP-752.PC", "TP-776.42", "FIXATION-PA", "5000-S3", "5005-S8", "TP-1.D.G", "TP-1.D.U"})
+                        "TP-752.PC", "TP-776.42", "FIXATION-PA", "5000-S3", "5005-S8", "TP-1.D.G", "TP-1.D.U", "5000-D1", "5005-S2", "5000-S5", "T1032", "TP-1.D.Q"})
 STATUSES = frozenset({"published", "rule_2025", "derived", "unpublished", "incomplete"})
 PROVISIONAL_STATUSES = frozenset({"unpublished", "incomplete"})
 _METADATA = ("source", "ref", "status")

@@ -4,6 +4,109 @@ Versions selon SemVer. Une entrée **« change les résultats »** signale toute
 déplace un montant calculé pour une année déjà publiée; elle cite la source officielle qui la
 justifie.
 
+## 0.6.0 — en préparation
+
+**Change l'API et change les résultats.** Les valeurs numériques des paramètres existants
+restent inchangées; les formules erronées et les revenus désormais explicitement saisis sont
+traités conformément aux sources officielles.
+
+- Entrées `PensionIncome`, `Benefits` et `Deductions` : rentes RPA/REER, FERR admissibles de
+  survivant, AE/RQAP, suppléments fédéraux, aide sociale, indemnités, trop-perçus remboursés,
+  cotisations RPA et cotisations syndicales/professionnelles distinctes fédéral/Québec.
+  Les inconnues déterminantes bloquent le calcul et fournissent les questions à poser.
+- Nouveau document `5000-D1`, grilles `23500-*`, `25000-*` et `31400-*`. Récupération AE
+  avant PSV/SRG, déduction des suppléments réduite de la part récupérée. Sources :
+  [feuille de travail fédérale 2025](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25f.pdf),
+  [T4E 2025](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t4e/t4e-25b.pdf),
+  [T4E 2026](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t4e/t4e-26b.pdf),
+  [déduction 25000](https://www.canada.ca/fr/agence-revenu/services/impot/particuliers/sujets/tout-votre-declaration-revenus/declaration-revenus/remplir-declaration-revenus/deductions-credits-depenses/ligne-25000-deduction-autres-paiements.html).
+- **Correction REER ordinaire** : composante de `TP-1:122` → `TP-1:154`; elle n'alimente plus
+  le crédit de retraite de l'annexe B. Les rentes de REER échu et paiements de FERR restent à
+  122. Le revenu total ne change pas; l'impôt peut augmenter si l'ancien crédit était accordé.
+  Source : [TP-1, ligne 154, point 6](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/96-a-164-revenu-total/ligne-154/point-6/).
+- Le revenu net fédéral est borné à zéro. L'IMR conserve cependant la base signée avant les
+  rajouts, dans les deux régimes. Ajout de la déduction pour travailleur au TP-776.42 et des
+  cotisations syndicales au T691. Sources :
+  [T691, partie 1 et note 1](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t691/t691-25f.pdf),
+  [TP-776.42, lignes 1, 157.5, 157.9 et 158](https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-776.42%282025-10%29.pdf).
+- Québec : aide sociale imposable (147), indemnités et suppléments déduits au revenu imposable
+  (148/295), redressement du montant personnel fourni par le relevé 5 (358/359), crédit de
+  cotisations de 10 % (397.1/397). L'annexe F exclut les prestations 147/148 et déduit la partie
+  AE des récupérations. Sources :
+  [ligne 295](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/276-a-298-2-revenu-imposable/ligne-295/),
+  [ligne 358](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-358/),
+  [ligne 397](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-397/),
+  [annexe F](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.F%282025-12%29.pdf).
+- L'adaptateur `ParentIncome.from_tax_return` conserve les retraits REER déplacés et reprend
+  l'AE/RQAP et les prestations de remplacement, sans inclure l'aide sociale exclue.
+- Aucune clé de formulaire supprimée, aucun alias retiré. Seule la composante REER ordinaire
+  change de ligne; la ligne 122 reste disponible pour ses autres revenus.
+- Validation de cette étape : 437 tests réussis; sans oracle, 335 réussis et 22 sautés.
+  Salarié : 36,512 → 37,596 µs (+3,0 %); retraité : 31,974 → 34,936 µs (+9,3 %).
+  Mesure appariée, détails et contrainte historique encore à satisfaire dans `PLAN.md`.
+- Ajout de `compute_couple`, `required_couple_questions` et `CoupleReturn` : deux revenus
+  calculés avant les crédits, revenu net du conjoint transmis à B/K, droits de B réunis puis
+  répartis. Le partage par défaut est égal et peut être choisi explicitement. Les questions
+  restent propres à chaque personne; aucun statut ou mois exempté n'est présumé.
+  **Change les résultats pour les couples utilisant cette nouvelle API**, puisque les droits
+  des deux personnes sont réduits ensemble une seule fois. `compute` conserve ses montants.
+  Sources : [annexe B 2025, lignes 23/28/33/34](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf)
+  et [guide, ligne 361](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-361/).
+- Nouvelles lignes B `1.C`, `8.C`, `9.C` pour la colonne conjoint, sans renommer les clés de la
+  colonne du déclarant. `CoupleReturn.refs` relie les déclarations; `Line.refs` reste local.
+  Les liens des autres crédits ci-dessous réutilisent ce même contrat.
+- Coordination : 469 tests réussis, dont 31 nouveaux; sans données locales, 367 réussis et
+  22 sautés. Comparaison exacte de 600 profils et 128 124 montants
+  historiques. Salarié : 36,833 → 37,918 µs (1,029×). Aucun paramètre existant modifié.
+- Ajout de `CoupleOptions` : confirmations requises pour le montant fédéral pour conjoint,
+  son supplément pour infirmité et les transferts fédéraux. Les questions inconnues bloquent
+  `compute_couple`; les choix figurent dans son JSON. Ajout de `5000-S5` (30300/30425) et
+  `5005-S2` propre au Québec (âge/pension inutilisés vers 32600). Sources :
+  [annexe 5](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s5/5000-s5-25f.pdf),
+  [annexe 2 du Québec](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-s2/5005-s2-25f.pdf),
+  [TD1 2026](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/td1/td1-26f.pdf).
+- **Change les résultats** : les soldes TP-1:413/430 restent négatifs lorsque des crédits
+  sont inutilisés, même pour une personne seule; le plancher zéro est appliqué à 432. Dans
+  `compute_couple`, le transfert à 431 réduit l'impôt du bénéficiaire et les grilles 7/8 du
+  TP-776.42 recalculent la portion admise à l'IMR; l'annexe E reprend le transfert à 11.
+  Le transfert québécois peut être désactivé. Sources :
+  [TP-1, lignes 413 à 432](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D%282025-12%29.pdf),
+  [ligne 431](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/400-a-447-impot-et-cotisations/ligne-431/),
+  [TP-776.42, grille 8](https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-776.42%282025-10%29.pdf).
+- Les transferts d'études/handicap, les autres personnes à charge, l'annexe A et le
+  fractionnement restent à compléter. Les documents S2/S5 exposent uniquement les parties
+  calculées. Aucune clé existante renommée par ce lot.
+- Transferts : 497 tests réussis; copie publique : 395 réussis, 22 sautés. Les 600 totaux
+  historiques sont inchangés; huit montants intermédiaires sur 128 124 deviennent négatifs
+  (413/430). Aucune des 202 entrées numériques préexistantes des TOML ne change.
+- Performance du lot transferts : salarié 37,496 → 39,496 µs (1,053×); maximum 1,092×
+  parmi les cinq profils. La cible historique reste ouverte; détails dans `PLAN.md`.
+- Ajout de `PensionSplit`, T1032 et TP-1.D.Q : choix indépendants de fractionnement des
+  pensions RPA/FERR/rentes REER saisies, limites de 50 %, prorata fédéral et ajustement des
+  crédits de pension. Les confirmations et retenues manquantes bloquent le calcul. La note 1
+  pour certains bénéficiaires de moins de 65 ans demande le revenu lié à un décès de conjoint
+  survenu dans l'année. **Change les résultats lorsque ces nouveaux choix sont fournis.**
+  Sources : [T1032, étapes 2 à 5](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t1032/t1032-25f.pdf),
+  [annexe Q](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.Q%282025-12%29.pdf).
+- Les transferts sont intégrés avant le revenu net, les récupérations AE/PSV, les droits
+  familiaux et l'IMR. La grille de retraite B reprend 122/123 et déduit 245; F déduit le
+  transfert à 46. Sources : [annexe B](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf),
+  [annexe F](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.F%282025-12%29.pdf).
+- `TaxPayments` : retenues d'impôt et acomptes des deux régimes confirmés, y compris zéro.
+  T1032:39/42 et Q:58 répartissent les retenues; nouveaux soldes `federal_balance` et
+  `quebec_balance`, négatifs pour un remboursement et inconnus (`None`) sans paiements saisis.
+  Les lignes finales distinguent remboursement et solde dû en valeur positive. La charge
+  annuelle `total_payable` est conservée. Sources : [T1, étape 6](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-r/5005-r-25f.pdf),
+  [TP-1, lignes 451 à 479](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D%282025-12%29.pdf).
+- Fractionnement et paiements : 546 tests réussis; copie publique : 444 réussis, 22 sautés.
+  600 profils, 128 124 montants et tous les totaux historiques strictement inchangés depuis
+  9811dc2. Aucune des 1 698 valeurs numériques préexistantes des TOML (tables de pension alimentaire comprises) modifiée, aucune clé renommée.
+  Les pensions particulières, transferts directs et situations de décès restent à compléter.
+- Performance du lot fractionnement : salarié 39,951 → 39,857 µs; retraité 37,217 → 39,421 µs.
+  Maximum 1,059× sur les cinq profils; couple avec deux choix : 146,704 µs. La cible
+  historique globale reste ouverte (salarié 1,694×); protocole et profils dans `PLAN.md`.
+- La portée complète demandée et les éléments encore à faire figurent dans `IMPLEMENTATION.md`.
+
 ## 0.5.0 — 2026-10-04
 
 **Change l'API et change les résultats.** La couverture RAMQ annuelle et l'absence de conjoint

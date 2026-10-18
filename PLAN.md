@@ -278,26 +278,24 @@ un formulaire web (à faire avec l'accord de PL). Hors portée : ajustements mot
 
 ## Points d'interprétation
 
-Deux règles où impotsqc suit sa lecture du formulaire officiel et où un calculateur externe
-diverge. Chacune est à confirmer par un logiciel certifié par Revenu Québec.
+Les divergences historiques sont conservées dans les relevés locaux; une correction du moteur
+ne modifie pas ces relevés et doit supprimer sa tolérance dans les tests.
 
-1. **Retraits REER et montant pour revenus de retraite (annexe B).** Le guide du TP-1 inscrit à
-   la ligne 122 « les prestations d'un régime enregistré d'épargne-retraite (REER) », avec les
-   FERR et les rentes. L'annexe B calcule le montant sur les lignes 122 et 123 sans condition
-   d'âge; le guide, ligne 361, n'exclut que la PSV, les rentes du RRQ et du RPC, et la convention
-   de retraite. impotsqc inclut donc les retraits REER. Effet : jusqu'à environ 370 $ d'impôt du
-   Québec en moins par année. Cas décisif : 66 ans, retrait REER de 60 000 $, PSV de 8 900 $,
-   année 2025. impotsqc donne 2 349 $ à la ligne 361.
+1. **Retraits REER ordinaires : corrigé en 0.6.** Ils appartiennent à la ligne 154, point 6,
+   et sont exclus du montant pour revenus de retraite. La ligne 122 accueille notamment les
+   rentes de REER échu et les paiements FERR. L'ancienne interprétation incluait à tort les
+   retraits ordinaires dans B. Les trois écarts historiques par année sont désormais résolus.
+   Source officielle et migration : `CHANGELOG.md`, version 0.6.
 2. **Maximum de la cotisation au régime d'assurance médicaments 2026 (annexe K).** Le maximum de
    l'année est la somme de six mois à chacun des deux tarifs mensuels, arrondie au dollar. C'est
    la règle de l'annexe K 2025 : 6 × 62,00 + 6 × 63,83 = 754,98 $, imprimé 755 $. Avec la prime
    de 789 $ annoncée par la RAMQ le 2026-06-30, cela donne 777 $ pour 2026. Valeur provisoire
    jusqu'à l'annexe K 2026. En 2025, l'oracle et impotsqc donnent tous deux 755 $.
-3. **Impôt minimum du Québec.** Taux de 19 %, exemption indexée, gains en capital à 100 % et 50 %
-   des crédits non remboursables : bulletin d'information 2023-4 de Finances Québec et Chaire en
-   fiscalité et en finances publiques. La refonte 0.3 a vérifié la numérotation sur le TP-776.42, mais conserve le calcul 0.2 :
-   revenu imposable après plancher à zéro et cotisations bonifiées seules dans les déductions
-   rajoutées. Les corrections fiscales sont distinctes de cette refonte sans changement de montants.
+3. **Impôt minimum : bases corrigées en 0.6.** Les deux régimes conservent le revenu imposable
+   signé avant leurs rajouts. Le Québec rajoute aussi 50 % de la déduction pour travailleur
+   (TP-776.42, ligne 157.9); le fédéral rajoute la part visée des cotisations syndicales
+   (T691, ligne 51). Le report sur sept ans et les interactions avec les déductions/crédits
+   encore absents du moteur restent à implémenter.
 
 ## Hors portée de la v0.1
 
@@ -305,3 +303,209 @@ La RAMQ des couples et les exemptions pour enfants sont couvertes depuis 0.5. Re
 travail autonome, calcul fiscal complet du couple, fractionnement du revenu de pension, transferts
 entre conjoints, crédits pour enfants et crédits remboursables (solidarité, allocation famille), frais médicaux, dons,
 acomptes provisionnels, pertes reportées, résidents d'une autre province.
+
+
+## Extension des revenus et déductions (0.6 en cours)
+
+Première étape du registre [IMPLEMENTATION.md](IMPLEMENTATION.md) : pensions admissibles,
+AE/RQAP et récupérations coordonnées avec la PSV, suppléments fédéraux reçus, aide sociale,
+indemnités et redressement québécois fourni, cotisations RPA et syndicales/professionnelles.
+Les différences fédéral/Québec sont conservées dans les entrées et dans les lignes officielles.
+Les grilles 23500, 25000 et 31400 sont lisibles dans `forms["5000-D1"]` avec leurs dépendances.
+Aucun objet annexe n'est créé pour une situation absente.
+
+L'attribution familiale de l'aide sociale reste fournie explicitement; le calcul coordonné du
+ménage viendra avec Q01/Q02. Le TP-752.0.0.6 n'est pas rempli par le moteur : le redressement
+qui en résulte peut être saisi. La déduction des trop-perçus vise l'année courante; le choix
+rétroactif et les crédits pour ces remboursements demeurent à compléter.
+
+
+Validation de cette étape : **437 tests réussis**, dont validation locale, résolutions des refs,
+absence de cycles, JSON, continuité et revenu disponible croissant. Copie sans oracle :
+**335 réussis, 22 sautés**. Comparaison des TOML avec `main` : aucune valeur numérique
+préexistante modifiée. Les tests historiques REER vérifient maintenant la concordance sans
+l'exception qui masquait l'ancienne erreur; leurs relevés sont inchangés.
+
+Mesure appariée de la version 0.5 (`main` 226de1f) et du code 0.6 en préparation, même Python
+3.14.3, paramètres chauds, médiane de sept séries de 10 000 appels de `benchmarks/compute.py` :
+
+| Profil | Avant 0.5 (µs) | Après cette étape (µs) | Rapport |
+| --- | ---: | ---: | ---: |
+| salarie | 36.512 | 37.596 | 1.030× |
+| retraite | 31.974 | 34.936 | 1.093× |
+| carriere | 43.610 | 45.002 | 1.032× |
+| gain_capital | 42.051 | 43.695 | 1.039× |
+| sans_revenu | 19.788 | 20.766 | 1.049× |
+
+Le profil salarié est à 1,60× la référence historique 0.3 (23,531 µs), légèrement au-dessus
+de la cible approximative de 1,5×. Cette cible et le mode rapide A03 restent ouverts dans le
+registre; la faible variation par rapport à 0.5 ne vaut pas validation de la contrainte globale.
+
+
+## Coordination des conjoints : annexe B (0.6.0 en préparation)
+
+`compute_couple` remplit les revenus des deux personnes avant les crédits québécois. Les deux
+phases du TP-1 sont communes à `compute` et `compute_couple`; il n'y a ni formule fiscale copiée
+pour les couples ni calcul préalable de déclarations jetables. Le revenu du conjoint provient
+de son TP-1:275 et remplace la saisie manuelle après vérification d'une éventuelle valeur fournie.
+
+L'annexe B réunit les montants d'âge, de retraite et de personne vivant seule admissibles des
+deux contribuables. La réduction familiale s'applique au total avant sa répartition. La même
+ligne 32 figure dans les deux annexes; leurs lignes 34 totalisent ce montant. Le choix par défaut
+est un partage égal, modifiable par `schedule_b_first_share`, sans optimisation automatique.
+Sources : [annexe B 2025](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf)
+et [guide, ligne 361](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-361/).
+
+`CoupleReturn.refs` porte les dépendances d'une personne vers l'autre. Elles sont séparées des
+références locales de `Line`, ce qui préserve les codes officiels et le contrat de `TaxReturn`.
+Les montants d'allocation sont calculés à partir du droit commun et du choix, sans lien réciproque
+cyclique. Les liens d'entrée vers les revenus du conjoint se résolvent dans les deux déclarations.
+
+Cette étape couvre Q02 en partie et les droits/partages de Q03. Le lot suivant ajoute les
+parties conjoint des annexes 2/5 et TP-1:431; l'annexe A, le supplément monoparental et le
+fractionnement restent dans le registre. Le total des couples porte un avertissement d'incomplétude.
+
+Validation : 469 tests réussis, dont 31 nouveaux cas de couples; sans données locales ignorées,
+367 réussis et 22 sautés. Montants 2025 indépendants, conservation du montant
+familial, symétrie, questions, revenus incohérents, métadonnées, graphe acyclique et JSON.
+Comparaison exacte à 91050c9 : 600 contribuables fictifs, 128 124 montants et tous les totaux
+historiques de `compute` inchangés. Aucun paramètre ni montant attendu historique modifié.
+
+Python 3.14.3, `timeit`, paramètres chauds, entrées préconstruites, médiane de 7 × 10 000 appels,
+benchmark individuel avant/après cette étape (avant : 91050c9) :
+
+| Profil | Avant (µs) | Après (µs) | Rapport |
+| --- | ---: | ---: | ---: |
+| Salarié | 36,833 | 37,918 | 1,029× |
+| Retraité | 34,348 | 34,494 | 1,004× |
+| Prolongation de carrière | 44,123 | 44,987 | 1,020× |
+| Gain en capital | 42,756 | 43,576 | 1,019× |
+| Sans revenu | 20,498 | 20,767 | 1,013× |
+
+La référence 0.3 reste 23,531 µs pour le salarié : environ 1,61× à ce stade. L'objectif historique
+de coût approximatif de 1,5× reste ouvert dans A03; ce tableau ne remplace pas cette référence.
+
+Le couple retraité de l’exemple README (deux FERR de 25 000 $, 66 et 67 ans, couverture privée
+annuelle) prend 95,456 µs pour les deux déclarations coordonnées, selon le même protocole.
+
+
+## Crédits et transferts entre conjoints (0.6.0 en préparation)
+
+Le T1 et le TP-1 séparent maintenant revenus, droits personnels et impôt final, dans les mêmes
+objets Form. Le calcul du montant pour conjoint et des crédits transférables consulte les
+revenus définitifs et les droits personnels du partenaire avant de compléter les deux impôts.
+Aucun formulaire complet n'est calculé puis jeté.
+
+- `CoupleOptions` demande une confirmation du soutien/admissibilité du conjoint et des
+  conditions fédérales; le statut québécois au 31 décembre ne les implique pas.
+- `5000-S5` : sections 30300 et 30425; `5005-S2` : montants inutilisés d'âge/pension vers
+  32600. Les droits de handicap et d'études compléteront S2 avec leurs propres modules.
+- TP-1:413 et 430 conservent les valeurs négatives prescrites. Le bénéficiaire déduit à 432
+  la valeur absolue reçue à 431; le cédant reprend son solde négatif à 431. Le choix
+  `transfer_unused_quebec=False` désactive ce transfert.
+- La grille 8 du TP-776.42 recalcule le crédit transférable admis à l'IMR depuis les crédits
+  et l'impôt du conjoint : il peut différer de la moitié de 431 en présence de dividendes.
+  Les attributions B.1/B.2 d'études et de dons restent à ajouter avec ces entrées.
+- Les liens interpersonnels sont dans `CoupleReturn.refs`; ses choix et le partage sont
+  sérialisés. Aucun crédit de conjoint n'est construit dans `compute` individuel.
+
+Sources : [annexe 2 du Québec](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5005-s2/5005-s2-25f.pdf),
+[annexe 5](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s5/5000-s5-25f.pdf),
+[TD1 2026](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/td1/td1-26f.pdf),
+[TP-1 2025](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D%282025-12%29.pdf),
+[guide de la ligne 431](https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/400-a-447-impot-et-cotisations/ligne-431/),
+[TP-776.42, grilles 7/8](https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-776.42%282025-10%29.pdf).
+
+Validation : 497 tests, dont 28 nouveaux cas de transferts; copie sans données locales :
+395 réussis et 22 sautés. Cas 2025/2026, infirmité, extinction, pension avant 65 ans,
+IMR/dividendes, non-double-comptage, symétrie, questions, références acycliques et JSON.
+600 profils comparés à adb1d3c : tous les totaux inchangés; sur 128 124 montants, huit soldes
+413/430 deviennent négatifs conformément au TP-1. Les 202 entrées numériques préexistantes
+des TOML sont identiques.
+
+
+Mesure appariée de ce lot (avant : adb1d3c; après nettoyage des références du chemin
+individuel), Python 3.14.3, médiane de 7 × 10 000 appels, entrées préconstruites, paramètres
+chauds et sans JSON :
+
+| Profil | Avant (µs) | Après (µs) | Rapport |
+| --- | ---: | ---: | ---: |
+| Salarié | 37,496 | 39,496 | 1,053× |
+| Retraité | 34,567 | 37,133 | 1,074× |
+| Prolongation de carrière | 44,635 | 48,755 | 1,092× |
+| Gain en capital | 43,222 | 47,183 | 1,092× |
+| Sans revenu | 20,807 | 22,233 | 1,069× |
+
+La première mesure avant nettoyage était de 42,042 µs pour le salarié; les références des
+crédits individuels ne sont plus reconstruites ni cherchées parmi des lignes encore absentes.
+Le calcul individuel ne construit ni options de couple ni annexes 2/5. Le salarié reste à
+1,68× la référence historique 0.3 (23,531 µs); A03 et la cible approximative de 1,5× demeurent
+ouverts, sans déplacement de la référence historique.
+
+Le calcul coordonné de deux FERR de 25 000 $ (66 et 67 ans, 2025, assurance privée annuelle,
+partage égal de B, transferts fédéraux confirmés) prend 111,817 µs pour les deux déclarations,
+selon le même protocole. Le lot précédent, qui ne calculait pas ces transferts, prenait 95,456 µs.
+
+
+## Fractionnement et retenues de pension (0.6.0 en préparation, 2026-10-05)
+
+Les choix fédéral et québécois sont deux données `PensionSplit` distinctes. Un seul cédant
+est choisi par régime; aucune recherche automatique d'un partage optimal n'est effectuée.
+La ventilation des pensions RPA/FERR/rentes REER est commune au T1 et au T1032. Les documents
+sont calculés avant les revenus nets, ce qui évite de reconstruire les déclarations après
+le fractionnement. Les références du T1032 suivent les sources de chaque personne : locales
+dans `Line.refs`, vers l'autre déclaration dans `CoupleReturn.refs`.
+
+Le T1032 conserve les pensions initiales à 68020, le prorata de mois à 18, le plafond à 21,
+le choix à 22, puis les droits de crédit à 31/34 et les retenues à 68050/39/42. La note 1
+est appliquée au bénéficiaire de moins de 65 ans; un décès survenu dans l'année est confirmé
+séparément de la seule origine de survivant. L'annexe Q, réservée au cédant de 65 ans ou plus,
+reprend le choix à 22 et l'impôt transféré à 58. Le régime québécois ne reprend pas le prorata
+fédéral de l'état civil.
+
+Les déductions 21000/245 et revenus 11600/123 précèdent les récupérations AE/PSV, les crédits
+et l'IMR. Les grilles de retraite B reprennent 122 + 123 − 245; F déduit 245 à 46. Les montants
+peuvent différer entre régimes, car les deux personnes de cette API résident au Québec.
+
+`TaxPayments` exige les retenues et acomptes réels des deux régimes. Les calculs de solde
+reprennent les crédits déjà calculés; ils ne modifient pas la charge fiscale annuelle. Les
+soldes restent inconnus sans cet objet. Les reports d'impôt, trop-perçus de cotisations,
+transferts interprovinciaux et de remboursement restent dans leurs étapes du registre.
+
+Sources : [T1032 2025](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t1032/t1032-25f.pdf),
+[annexe Q](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.Q%282025-12%29.pdf),
+[guide, lignes 122/123](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.G%282025-12%29.pdf),
+[annexe B](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.B%282025-12%29.pdf),
+[annexe F](https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.F%282025-12%29.pdf).
+
+Validation : 546 tests, dont 49 nouveaux; copie publique : 444 réussis et 22 sautés. Montants
+chiffrés 2025/2026, choix indépendants, prorata et plafonds, crédits avant 65 ans, note 1,
+récupérations AE/PSV, bases IMR, symétrie, retenues, soldes, références et JSON. Comparaison
+exacte de 600 profils et 128 124 montants avec 9811dc2; tous les totaux sont identiques.
+Les 1 698 valeurs numériques préexistantes des TOML (tables de pension alimentaire comprises) sont inchangées.
+
+Q04 reste à compléter pour les conventions de retraite, les prestations admissibles de
+vétérans, RPAC, pensions étrangères et exclusions pour transferts directs. Les formulaires
+actuels exposent seulement les pensions explicitement représentées par les entrées. Un
+avertissement distingue le prorata T1032 au décès des autres règles de décès encore absentes.
+
+
+Mesure du lot fractionnement, Python 3.14.3, mêmes cinq entrées préconstruites, paramètres
+chauds, médiane de 7 × 10 000 appels avec `timeit` (`benchmarks/compute.py`). Avant : 9811dc2.
+
+| Profil individuel | Avant (µs) | Après (µs) | Rapport |
+| --- | ---: | ---: | ---: |
+| Salarié | 39,951 | 39,857 | 0,998× |
+| Retraité | 37,217 | 39,421 | 1,059× |
+| Prolongation de carrière | 49,867 | 49,786 | 0,998× |
+| Gain en capital | 48,543 | 48,438 | 0,998× |
+| Sans revenu | 22,443 | 22,607 | 1,007× |
+
+Un couple fictif de 66/67 ans en 2025, FERR de 60 000/10 000 $, avec transferts fédéral de
+30 000 $ et québécois de 20 000 $, retenues/acompte nuls confirmés, assurance privée annuelle,
+12 mois d'union et transferts fédéraux de crédits confirmés, prend 146,704 µs pour les deux
+déclarations. Ce profil diffère du couple de 25 000/25 000 $ mesuré au lot précédent.
+
+Le salarié reste à 1,694× la référence historique 0.3 de 23,531 µs. La cible globale d'environ
+1,5× n'est donc pas encore atteinte; A03 conserve le travail de performance. Les deux nouveaux
+formulaires ne sont construits que pour un choix de fractionnement positif.

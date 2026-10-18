@@ -72,8 +72,8 @@ exemption = 179_990
 capital_gains_inclusion = 1.0
 deduction_addback_rate = 0.5
 credit_fraction = 0.5
-source = "https://cffp.recherche.usherbrooke.ca/outils-ressources/guide-mesures-fiscales/impot-minimum-remplacement/"
-ref = "Taux de 19 % et exemption : bulletin d'information 2023-4 et Tableau 3 de Finances Québec (2025). Calcul [19 % × (revenu imposable rajusté − exemption)] − 50 % des crédits non remboursables : Chaire en fiscalité et en finances publiques (Université de Sherbrooke). Le formulaire TP-776.42 n'a pas pu être lu (accès refusé)"
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/TP-776.42%282025-10%29.pdf"
+ref = "TP-776.42 (2025-10), lignes 1, 23, 25, 157.5, 157.9, 157.12, 250 et 254 : base signée, rajout de 50 % des déductions visées dont celle pour travailleur, 50 % des crédits admissibles"
 status = "derived"
 
 [health_services_fund]
@@ -104,4 +104,17 @@ monthly_maximum_first_half = 62.00
 monthly_maximum_second_half = 63.83
 source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.K%282025-12%29.pdf"
 ref = "Annexe K 2025 : exemption de 19 890 $ (ligne 41), 7,84 % puis 11,76 % (ligne 80), maximum de 766 $ (ligne 83), cotisation maximale pour l'année de 755 $ (ligne 87). Conjoint : 32 240 $ (41), enfants : 12 350 / 16 570 $ sans conjoint (44) ou 4 220 / 8 120 $ avec conjoint (42), taux 3,93 / 5,89 % (80). Mois exemptés (60 à 62), réductions (85, 88) : 62,00 $ janvier-juin et 63,83 $ juillet-décembre"
+status = "published"
+
+[union_dues_credit]
+rate = 0.10
+source = "https://www.revenuquebec.ca/fr/citoyens/declaration-de-revenus/produire-votre-declaration-de-revenus/comment-remplir-votre-declaration-de-revenus/aide-par-ligne/350-a-398-1-credits-dimpot-non-remboursables/ligne-397/"
+ref = "Lignes 397.1 et 397 : 10 % des cotisations syndicales, professionnelles ou autres admissibles, après exclusion des taxes remboursables"
+status = "published"
+
+[pension_split]
+maximum_fraction = 0.50
+minimum_age = 65
+source = "https://www.revenuquebec.ca/documents/fr/formulaires/tp/2025-12/TP-1.D.Q%282025-12%29.pdf"
+ref = "Annexe Q, lignes 10 à 22 et 50 à 58; cédant de 65 ans ou plus"
 status = "published"
